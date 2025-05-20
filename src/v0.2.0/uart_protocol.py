@@ -5,8 +5,8 @@ Pamir AI UART Protocol Specification
 Overview:
 ---------
 This protocol provides a compact, efficient binary communication interface between
-a Linux host system and the RP2040 microcontroller. It replaces the previous 
-JSON-based approach with a fixed-size binary packet format to reduce CPU usage 
+a Linux host system and the RP2040 microcontroller. It replaces the previous
+JSON-based approach with a fixed-size binary packet format to reduce CPU usage
 and improve reliability.
 
 Packet Structure:
@@ -145,46 +145,46 @@ import _thread
 
 # Protocol definitions
 # Message types (3 most significant bits)
-TYPE_BUTTON     = 0x00  # 0b000xxxxx
-TYPE_LED        = 0x20  # 0b001xxxxx  
-TYPE_POWER      = 0x40  # 0b010xxxxx
-TYPE_DISPLAY    = 0x60  # 0b011xxxxx
+TYPE_BUTTON = 0x00  # 0b000xxxxx
+TYPE_LED = 0x20  # 0b001xxxxx
+TYPE_POWER = 0x40  # 0b010xxxxx
+TYPE_DISPLAY = 0x60  # 0b011xxxxx
 TYPE_DEBUG_CODE = 0x80  # 0b100xxxxx
 TYPE_DEBUG_TEXT = 0xA0  # 0b101xxxxx
-TYPE_SYSTEM     = 0xC0  # 0b110xxxxx
-TYPE_EXTENDED   = 0xE0  # 0b111xxxxx
-TYPE_MASK       = 0xE0  # 0b11100000
+TYPE_SYSTEM = 0xC0  # 0b110xxxxx
+TYPE_EXTENDED = 0xE0  # 0b111xxxxx
+TYPE_MASK = 0xE0  # 0b11100000
 
 # Button event flags (5 least significant bits)
-BTN_UP_MASK     = 0x01
-BTN_DOWN_MASK   = 0x02
+BTN_UP_MASK = 0x01
+BTN_DOWN_MASK = 0x02
 BTN_SELECT_MASK = 0x04
-BTN_POWER_MASK  = 0x08
+BTN_POWER_MASK = 0x08
 
 # LED control flags
 LED_CMD_IMMEDIATE = 0x00
-LED_CMD_SEQUENCE  = 0x10
-LED_MODE_STATIC   = 0x00
-LED_MODE_BLINK    = 0x04
-LED_MODE_FADE     = 0x08
-LED_MODE_RAINBOW  = 0x0C
-LED_MODE_MASK     = 0x0C
-LED_ID_ALL        = 0x00
-LED_ID_MASK       = 0x03
+LED_CMD_SEQUENCE = 0x10
+LED_MODE_STATIC = 0x00
+LED_MODE_BLINK = 0x04
+LED_MODE_FADE = 0x08
+LED_MODE_RAINBOW = 0x0C
+LED_MODE_MASK = 0x0C
+LED_ID_ALL = 0x00
+LED_ID_MASK = 0x03
 
 # Debug categories
-DEBUG_CAT_SYSTEM   = 0x00
-DEBUG_CAT_INPUT    = 0x01
-DEBUG_CAT_DISPLAY  = 0x02
-DEBUG_CAT_MEMORY   = 0x03
-DEBUG_CAT_POWER    = 0x04
+DEBUG_CAT_SYSTEM = 0x00
+DEBUG_CAT_INPUT = 0x01
+DEBUG_CAT_DISPLAY = 0x02
+DEBUG_CAT_MEMORY = 0x03
+DEBUG_CAT_POWER = 0x04
 
 # System actions
-SYSTEM_PING        = 0x00
-SYSTEM_RESET       = 0x01
-SYSTEM_VERSION     = 0x02
-SYSTEM_STATUS      = 0x03
-SYSTEM_CONFIG      = 0x04
+SYSTEM_PING = 0x00
+SYSTEM_RESET = 0x01
+SYSTEM_VERSION = 0x02
+SYSTEM_STATUS = 0x03
+SYSTEM_CONFIG = 0x04
 
 # Constants
 PACKET_SIZE = 4
@@ -192,10 +192,10 @@ PACKET_SIZE = 4
 
 class PamirProtocol:
     """Handles the ultra-optimized binary protocol for Pamir devices"""
-    
+
     def __init__(self, uart, debug=False, wdt=None):
         """Initialize the protocol with a configured UART instance
-        
+
         Args:
             uart: Configured machine.UART instance
             debug: Enable debug output
@@ -204,14 +204,14 @@ class PamirProtocol:
         self.uart = uart
         self.debug = debug
         self.wdt = wdt
-        
+
         # Initialize receive buffer and state
         self.rx_buffer = bytearray(PACKET_SIZE)
         self.rx_pos = 0
-        
+
         # Create lock for thread-safe UART access
         self.uart_lock = _thread.allocate_lock()
-        
+
         # Callback handlers for different packet types
         self.handlers = {
             TYPE_BUTTON: None,
@@ -221,34 +221,34 @@ class PamirProtocol:
             TYPE_DEBUG_CODE: None,
             TYPE_DEBUG_TEXT: None,
             TYPE_SYSTEM: None,
-            TYPE_EXTENDED: None
+            TYPE_EXTENDED: None,
         }
-        
+
     def register_handler(self, packet_type, handler_func):
         """Register a callback function for a specific packet type
-        
+
         Args:
             packet_type: One of the TYPE_* constants
             handler_func: Function to call with the packet data
         """
         self.handlers[packet_type] = handler_func
-    
+
     def calculate_checksum(self, type_flags, data1, data2):
         """Calculate XOR checksum for packet
-        
+
         Args:
             type_flags: Byte 0 of packet
             data1: Byte 1 of packet
             data2: Byte 2 of packet
-            
+
         Returns:
             Checksum byte
         """
         return type_flags ^ data1 ^ data2
-    
+
     def send_packet(self, type_flags, data1, data2):
         """Send a packet over UART
-        
+
         Args:
             type_flags: Byte 0 of packet (type and subtype/data)
             data1: Byte 1 of packet (data)
@@ -256,36 +256,44 @@ class PamirProtocol:
         """
         checksum = self.calculate_checksum(type_flags, data1, data2)
         packet = bytes([type_flags, data1, data2, checksum])
-        
+
         with self.uart_lock:
             self.uart.write(packet)
-            
+
         if self.debug:
             print(f"TX: {packet.hex()}")
-    
+
     def verify_checksum(self, packet):
         """Verify packet checksum
-        
+
         Args:
             packet: 4-byte packet
-            
+
         Returns:
             True if checksum is valid, False otherwise
         """
         return packet[3] == (packet[0] ^ packet[1] ^ packet[2])
-    
+
     def send_button_state(self, btn_state):
         """Send button state packet
-        
+
         Args:
             btn_state: Button state bitmask (combination of BTN_* constants)
         """
         self.send_packet(TYPE_BUTTON | (btn_state & 0x1F), 0, 0)
-    
-    def send_led_command(self, led_id=LED_ID_ALL, mode=LED_MODE_STATIC, 
-                         is_sequence=False, r=0, g=0, b=0, value=0):
+
+    def send_led_command(
+        self,
+        led_id=LED_ID_ALL,
+        mode=LED_MODE_STATIC,
+        is_sequence=False,
+        r=0,
+        g=0,
+        b=0,
+        value=0,
+    ):
         """Send LED control packet
-        
+
         Args:
             led_id: LED ID (0 = all LEDs)
             mode: LED mode (LED_MODE_*)
@@ -298,16 +306,16 @@ class PamirProtocol:
         flags = TYPE_LED | (led_id & LED_ID_MASK) | (mode & LED_MODE_MASK)
         if is_sequence:
             flags |= LED_CMD_SEQUENCE
-            
+
         # Pack RGB and value into data bytes
         data1 = ((r & 0x0F) << 4) | (g & 0x0F)
         data2 = ((b & 0x0F) << 4) | (value & 0x0F)
-        
+
         self.send_packet(flags, data1, data2)
-    
+
     def send_power_command(self, cmd_type, param=0, data1=0, data2=0):
         """Send power management packet
-        
+
         Args:
             cmd_type: Command type (0-3)
             param: Command parameter (0-15)
@@ -316,99 +324,99 @@ class PamirProtocol:
         """
         flags = TYPE_POWER | ((cmd_type & 0x03) << 4) | (param & 0x0F)
         self.send_packet(flags, data1, data2)
-    
+
     def send_debug_code(self, category, code, param):
         """Send debug code packet
-        
+
         Args:
             category: Debug category (DEBUG_CAT_*)
             code: Debug code
             param: Debug parameter
         """
         self.send_packet(TYPE_DEBUG_CODE | (category & 0x1F), code, param)
-    
+
     def _feed_wdt(self):
         """Feed the watchdog timer if one was provided"""
         if self.wdt is not None:
             self.wdt.feed()
-    
+
     def send_debug_text(self, text):
         """Send debug text message (multi-packet if needed)
-        
+
         Args:
             text: Text message to send
         """
         # Convert text to bytes
-        text_bytes = text.encode('utf-8')
-        
+        text_bytes = text.encode("utf-8")
+
         # Split into chunks of 2 bytes
         chunks = []
         for i in range(0, len(text_bytes), 2):
-            chunk = text_bytes[i:i+2]
+            chunk = text_bytes[i : i + 2]
             if len(chunk) < 2:
                 # Pad to 2 bytes
-                chunk = chunk + b'\x00'
+                chunk = chunk + b"\x00"
             chunks.append(chunk)
-        
+
         # Send chunks
         for i, chunk in enumerate(chunks):
             first_chunk = 0x10 if i == 0 else 0x00
             continue_flag = 0x08 if i < len(chunks) - 1 else 0x00
             chunk_num = i % 8
-            
+
             flags = TYPE_DEBUG_TEXT | first_chunk | continue_flag | chunk_num
             self.send_packet(flags, chunk[0], chunk[1])
-            
+
             # Feed WDT after every few chunks to prevent timeout
             if i % 5 == 0:
                 self._feed_wdt()
-    
+
     def send_system_command(self, action, data1=0, data2=0):
         """Send system command packet
-        
+
         Args:
             action: System action (SYSTEM_*)
             data1: First data byte
             data2: Second data byte
         """
         self.send_packet(TYPE_SYSTEM | (action & 0x1F), data1, data2)
-    
+
     def send_display_command(self, cmd, param1=0, param2=0):
         """Send display command packet
-        
+
         Args:
             cmd: Display command
             param1: First parameter
             param2: Second parameter
         """
         self.send_packet(TYPE_DISPLAY | (cmd & 0x1F), param1, param2)
-    
+
     def send_ping(self):
         """Send ping request"""
         self.send_system_command(SYSTEM_PING)
-    
+
     def send_version_request(self):
         """Send version information request"""
         self.send_system_command(SYSTEM_VERSION)
-    
+
     def send_status_request(self):
         """Send status request"""
         self.send_system_command(SYSTEM_STATUS)
-    
+
     def send_reset_command(self):
         """Send system reset command"""
         self.send_system_command(SYSTEM_RESET)
-    
+
     def send_shutdown_command(self):
         """Send shutdown command"""
         self.send_power_command(3)  # 3 = shutdown (0x30)
-    
+
     def process_packet(self, packet):
         """Process a received packet
-        
+
         Args:
             packet: 4-byte packet
-        
+
         Returns:
             True if packet was handled, False otherwise
         """
@@ -417,22 +425,22 @@ class PamirProtocol:
             if self.debug:
                 print(f"Invalid packet size: {len(packet)}")
             return False
-        
+
         # Verify checksum
         if not self.verify_checksum(packet):
             if self.debug:
                 print(f"Invalid checksum: {packet.hex()}")
             return False
-        
+
         if self.debug:
             print(f"RX: {packet.hex()}")
-        
+
         # Extract packet type and call appropriate handler
         packet_type = packet[0] & TYPE_MASK
-        
+
         # Feed WDT before potentially time-consuming handler
         self._feed_wdt()
-        
+
         if packet_type in self.handlers and self.handlers[packet_type] is not None:
             try:
                 self.handlers[packet_type](packet)
@@ -442,45 +450,45 @@ class PamirProtocol:
                     print(f"Handler exception: {e}")
                 return False
         return False
-    
+
     def check_uart(self):
         """Check for and process any available UART data
-        
+
         Returns:
             Number of packets processed
         """
         packets_processed = 0
-        
+
         if self.uart.any():
             # Read available data
             data = self.uart.read(self.uart.any())
-            
+
             for byte in data:
                 # Add byte to buffer
                 self.rx_buffer[self.rx_pos] = byte
                 self.rx_pos += 1
-                
+
                 # Check if we have a complete packet
                 if self.rx_pos == PACKET_SIZE:
                     # Process packet
                     if self.process_packet(self.rx_buffer):
                         packets_processed += 1
-                    
+
                     # Reset buffer position
                     self.rx_pos = 0
-                
+
                 # Feed WDT during extended processing
                 if packets_processed > 0 and packets_processed % 10 == 0:
                     self._feed_wdt()
-        
+
         return packets_processed
-    
+
     def parse_button_packet(self, packet):
         """Parse button state from packet
-        
+
         Args:
             packet: 4-byte packet
-            
+
         Returns:
             Dictionary with button states
         """
@@ -489,27 +497,27 @@ class PamirProtocol:
             "up": bool(btn_state & BTN_UP_MASK),
             "down": bool(btn_state & BTN_DOWN_MASK),
             "select": bool(btn_state & BTN_SELECT_MASK),
-            "power": bool(btn_state & BTN_POWER_MASK)
+            "power": bool(btn_state & BTN_POWER_MASK),
         }
-    
+
     def parse_led_packet(self, packet):
         """Parse LED control parameters from packet
-        
+
         Args:
             packet: 4-byte packet
-            
+
         Returns:
             Dictionary with LED parameters
         """
         led_id = packet[0] & LED_ID_MASK
         mode = packet[0] & LED_MODE_MASK
         is_sequence = bool(packet[0] & LED_CMD_SEQUENCE)
-        
+
         r = (packet[1] >> 4) & 0x0F
         g = packet[1] & 0x0F
         b = (packet[2] >> 4) & 0x0F
         value = packet[2] & 0x0F
-        
+
         return {
             "led_id": led_id,
             "mode": mode,
@@ -517,39 +525,39 @@ class PamirProtocol:
             "r": r,
             "g": g,
             "b": b,
-            "value": value
+            "value": value,
         }
-    
+
     def parse_power_packet(self, packet):
         """Parse power management parameters from packet
-        
+
         Args:
             packet: 4-byte packet
-            
+
         Returns:
             Dictionary with power management parameters
         """
         cmd_type = (packet[0] >> 4) & 0x03
         param = packet[0] & 0x0F
-        
+
         return {
             "cmd_type": cmd_type,
             "param": param,
             "data1": packet[1],
-            "data2": packet[2]
+            "data2": packet[2],
         }
-    
+
     def get_packet_type_str(self, packet):
         """Get human-readable packet type
-        
+
         Args:
             packet: 4-byte packet
-            
+
         Returns:
             String describing the packet type
         """
         packet_type = packet[0] & TYPE_MASK
-        
+
         types = {
             TYPE_BUTTON: "Button",
             TYPE_LED: "LED",
@@ -558,8 +566,7 @@ class PamirProtocol:
             TYPE_DEBUG_CODE: "Debug Code",
             TYPE_DEBUG_TEXT: "Debug Text",
             TYPE_SYSTEM: "System",
-            TYPE_EXTENDED: "Extended"
+            TYPE_EXTENDED: "Extended",
         }
-        
+
         return types.get(packet_type, f"Unknown ({packet_type:#04x})")
-    
