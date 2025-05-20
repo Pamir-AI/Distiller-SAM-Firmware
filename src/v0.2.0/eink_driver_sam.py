@@ -1,10 +1,10 @@
-
 import machine
 import utime
-#TODO unblock the eink await 
+
+# TODO unblock the eink await
+
 
 class einkDSP_SAM:
-
 
     def __init__(self) -> None:
         self.oldData = 0x00
@@ -16,59 +16,245 @@ class einkDSP_SAM:
 
         self.EPD_WIDTH = 240
         self.EPD_HEIGHT = 416
-    
+
         # Initialize SPI
-        
-        self.spi = machine.SPI(1,baudrate=25000000,sck=machine.Pin(14, machine.Pin.OUT), mosi=machine.Pin(15, machine.Pin.OUT), miso=machine.Pin(8, machine.Pin.OUT))
+
+        self.spi = machine.SPI(
+            1,
+            baudrate=25000000,
+            sck=machine.Pin(14, machine.Pin.OUT),
+            mosi=machine.Pin(15, machine.Pin.OUT),
+            miso=machine.Pin(8, machine.Pin.OUT),
+        )
         self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1)
         self.init = True
         self.watchdogCounter = 0
-        
+
         self.lut_vcom = [
-        0x01,0x0a,0x0a,0x0a,0x0a,0x01,0x01,
-        0x02,0x0f,0x01,0x0f,0x01,0x01,0x01,
-        0x01,0x0a,0x00,0x0a,0x00,0x01,0x01,
-        0x01,0x00,0x00,0x00,0x00,0x01,0x01,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,				
-        ];
+            0x01,
+            0x0A,
+            0x0A,
+            0x0A,
+            0x0A,
+            0x01,
+            0x01,
+            0x02,
+            0x0F,
+            0x01,
+            0x0F,
+            0x01,
+            0x01,
+            0x01,
+            0x01,
+            0x0A,
+            0x00,
+            0x0A,
+            0x00,
+            0x01,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ]
 
         self.lut_ww = [
-        0x01,0x4a,0x4a,0x0a,0x0a,0x01,0x01,
-        0x02,0x8f,0x01,0x4f,0x01,0x01,0x01,
-        0x01,0x8a,0x00,0x8a,0x00,0x01,0x01,
-        0x01,0x80,0x00,0x80,0x00,0x01,0x01,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        ];
+            0x01,
+            0x4A,
+            0x4A,
+            0x0A,
+            0x0A,
+            0x01,
+            0x01,
+            0x02,
+            0x8F,
+            0x01,
+            0x4F,
+            0x01,
+            0x01,
+            0x01,
+            0x01,
+            0x8A,
+            0x00,
+            0x8A,
+            0x00,
+            0x01,
+            0x01,
+            0x01,
+            0x80,
+            0x00,
+            0x80,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ]
 
         self.lut_bw = [
-        0x01,0x4a,0x4a,0x0a,0x0a,0x01,0x01,
-        0x02,0x8f,0x01,0x4f,0x01,0x01,0x01,
-        0x01,0x8a,0x00,0x8a,0x00,0x01,0x01,
-        0x01,0x80,0x00,0x80,0x00,0x01,0x01,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        ];
+            0x01,
+            0x4A,
+            0x4A,
+            0x0A,
+            0x0A,
+            0x01,
+            0x01,
+            0x02,
+            0x8F,
+            0x01,
+            0x4F,
+            0x01,
+            0x01,
+            0x01,
+            0x01,
+            0x8A,
+            0x00,
+            0x8A,
+            0x00,
+            0x01,
+            0x01,
+            0x01,
+            0x80,
+            0x00,
+            0x80,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ]
 
         self.lut_wb = [
-        0x01,0x0a,0x0a,0x8a,0x8a,0x01,0x01,
-        0x02,0x8f,0x01,0x4f,0x01,0x01,0x01,
-        0x01,0x4a,0x00,0x4a,0x00,0x01,0x01,
-        0x01,0x40,0x00,0x40,0x00,0x01,0x01,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        ];
+            0x01,
+            0x0A,
+            0x0A,
+            0x8A,
+            0x8A,
+            0x01,
+            0x01,
+            0x02,
+            0x8F,
+            0x01,
+            0x4F,
+            0x01,
+            0x01,
+            0x01,
+            0x01,
+            0x4A,
+            0x00,
+            0x4A,
+            0x00,
+            0x01,
+            0x01,
+            0x01,
+            0x40,
+            0x00,
+            0x40,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ]
 
         self.lut_bb = [
-        0x01,0x0a,0x0a,0x8a,0x8a,0x01,0x01,
-        0x02,0x8f,0x01,0x4f,0x01,0x01,0x01,
-        0x01,0x4a,0x00,0x4a,0x00,0x01,0x01,
-        0x01,0x40,0x00,0x40,0x00,0x01,0x01,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-        ];
-    
+            0x01,
+            0x0A,
+            0x0A,
+            0x8A,
+            0x8A,
+            0x01,
+            0x01,
+            0x02,
+            0x8F,
+            0x01,
+            0x4F,
+            0x01,
+            0x01,
+            0x01,
+            0x01,
+            0x4A,
+            0x00,
+            0x4A,
+            0x00,
+            0x01,
+            0x01,
+            0x01,
+            0x40,
+            0x00,
+            0x40,
+            0x00,
+            0x01,
+            0x01,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+            0x00,
+        ]
+
     def de_init(self):
         self.spi.deinit()
         self.DC_PIN = machine.Pin(12, machine.Pin.IN, None)
@@ -79,17 +265,22 @@ class einkDSP_SAM:
         machine.Pin(15, machine.Pin.IN, None)
         machine.Pin(8, machine.Pin.IN, None)
         self.init = False
-            
-    
+
     def re_init(self):
         self.DC_PIN = machine.Pin(12, machine.Pin.OUT)
         self.RST_PIN = machine.Pin(11, machine.Pin.OUT)
         self.BUSY_PIN = machine.Pin(10, machine.Pin.IN, machine.Pin.PULL_UP)
 
-        self.spi = machine.SPI(1,baudrate=25000000,sck=machine.Pin(14, machine.Pin.OUT), mosi=machine.Pin(15, machine.Pin.OUT), miso=machine.Pin(8, machine.Pin.OUT))
-        self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1) 
+        self.spi = machine.SPI(
+            1,
+            baudrate=25000000,
+            sck=machine.Pin(14, machine.Pin.OUT),
+            mosi=machine.Pin(15, machine.Pin.OUT),
+            miso=machine.Pin(8, machine.Pin.OUT),
+        )
+        self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1)
         self.init = True
-            
+
     def epd_lut(self):
         self.epd_w21_write_cmd(0x20)  # 写入VCOM LUT
         for value in self.lut_vcom:
@@ -110,59 +301,56 @@ class einkDSP_SAM:
         self.epd_w21_write_cmd(0x24)  # 写入BB LUT
         for value in self.lut_bb:
             self.epd_w21_write_data(value)
-            
-        
-        
-        
+
     def epd_init_lut(self):
         self.RST_PIN.low()
         self.delay_xms(10)
         self.RST_PIN.high()
         self.delay_xms(10)
-        
-        self.epd_w21_write_cmd(0x04)    # 开启电源
-        self.lcd_chkstatus()            # 等待屏幕空闲
-        
-        self.epd_w21_write_cmd(0x00)    # 面板设置
+
+        self.epd_w21_write_cmd(0x04)  # 开启电源
+        self.lcd_chkstatus()  # 等待屏幕空闲
+
+        self.epd_w21_write_cmd(0x00)  # 面板设置
         self.epd_w21_write_data(0xF7)
-        
-        self.epd_w21_write_cmd(0x09)    # 取消波形默认设置
-        
-        self.epd_w21_write_cmd(0x01)    # 电源设置
+
+        self.epd_w21_write_cmd(0x09)  # 取消波形默认设置
+
+        self.epd_w21_write_cmd(0x01)  # 电源设置
         self.epd_w21_write_data(0x03)
         self.epd_w21_write_data(0x10)
         self.epd_w21_write_data(0x3F)
         self.epd_w21_write_data(0x3F)
         self.epd_w21_write_data(0x3F)
-        
-        self.epd_w21_write_cmd(0x06)    # Booster soft start设置
+
+        self.epd_w21_write_cmd(0x06)  # Booster soft start设置
         self.epd_w21_write_data(0xD7)
         self.epd_w21_write_data(0xD7)
         self.epd_w21_write_data(0x33)
-        
-        self.epd_w21_write_cmd(0x30)    # PLL控制（频率设置）
-        self.epd_w21_write_data(0x09)
-        
-        self.epd_w21_write_cmd(0x50)    # VCOM和数据间隔设置
-        self.epd_w21_write_data(0xD7)
-        
-        self.epd_w21_write_cmd(0x61)    # 分辨率设置
-        self.epd_w21_write_data(0xF0)       # 水平方向分辨率（HRES）
-        self.epd_w21_write_data(0x01)       # 垂直方向分辨率高8位
-        self.epd_w21_write_data(0xA0)       # 垂直方向分辨率低8位
 
-        self.epd_w21_write_cmd(0x2A)    # Gate/Source起始位置设置
+        self.epd_w21_write_cmd(0x30)  # PLL控制（频率设置）
+        self.epd_w21_write_data(0x09)
+
+        self.epd_w21_write_cmd(0x50)  # VCOM和数据间隔设置
+        self.epd_w21_write_data(0xD7)
+
+        self.epd_w21_write_cmd(0x61)  # 分辨率设置
+        self.epd_w21_write_data(0xF0)  # 水平方向分辨率（HRES）
+        self.epd_w21_write_data(0x01)  # 垂直方向分辨率高8位
+        self.epd_w21_write_data(0xA0)  # 垂直方向分辨率低8位
+
+        self.epd_w21_write_cmd(0x2A)  # Gate/Source起始位置设置
         self.epd_w21_write_data(0x80)
         self.epd_w21_write_data(0x00)
         self.epd_w21_write_data(0x00)
         self.epd_w21_write_data(0xFF)
         self.epd_w21_write_data(0x00)
 
-        self.epd_w21_write_cmd(0x82)    # VCOM直流电压设置
+        self.epd_w21_write_cmd(0x82)  # VCOM直流电压设置
         self.epd_w21_write_data(0x0F)
 
-        self.epd_lut()                  # 写入LUT波形表
-   
+        self.epd_lut()  # 写入LUT波形表
+
     def SPI_Delay(self):
         utime.sleep_us(10)  # 10 microseconds
 
@@ -182,7 +370,7 @@ class einkDSP_SAM:
         self.SPI_Write(data)
 
     def delay_xms(self, xms):
-        utime.sleep_us(xms*1000)
+        utime.sleep_us(xms * 1000)
 
     def epd_w21_init(self):
         self.delay_xms(10)  # At least 10ms delay
@@ -191,8 +379,7 @@ class einkDSP_SAM:
         self.RST_PIN.high()
         self.delay_xms(20)
 
-   
-    def EPD_Display(self,image):
+    def EPD_Display(self, image):
         width = (self.EPD_WIDTH + 7) // 8
         height = self.EPD_HEIGHT
 
@@ -203,7 +390,7 @@ class einkDSP_SAM:
 
         self.epd_w21_write_cmd(0x13)
         for _ in range(height * width):
-            self.epd_w21_write_data(0x00) 
+            self.epd_w21_write_data(0x00)
 
         self.epd_w21_write_cmd(0x12)
         self.delay_xms(1)  # Necessary delay
@@ -219,13 +406,13 @@ class einkDSP_SAM:
     def epd_sleep(self):
         self.epd_w21_write_cmd(0x02)  # Power off
         self.lcd_chkstatus()  # Implement this to check the display's busy status
-        
+
         self.epd_w21_write_cmd(0x07)  # Deep sleep
         self.epd_w21_write_data(0xA5)
 
     def epd_init(self):
         self.epd_w21_init()  # Reset the e-paper display
-        
+
         self.epd_w21_write_cmd(0x04)  # Power on
         self.lcd_chkstatus()  # Implement this to check the display's busy status
 
@@ -234,7 +421,7 @@ class einkDSP_SAM:
 
     def epd_init_fast(self):
         self.epd_w21_init()  # Reset the e-paper display
-        
+
         self.epd_w21_write_cmd(0x04)  # Power on
         self.lcd_chkstatus()  # Implement this to check the display's busy status
 
@@ -246,7 +433,7 @@ class einkDSP_SAM:
 
     def epd_init_part(self):
         self.epd_w21_init()  # Reset the e-paper display
-        
+
         self.epd_w21_write_cmd(0x04)  # Power on
         self.lcd_chkstatus()  # Implement this to check the display's busy status
 
@@ -265,33 +452,34 @@ class einkDSP_SAM:
 
     def PIC_display(self, old_file_path, file_path):
         # Assuming oldData is properly initialized and accessible
-    
+
         # Transfer old data
         self.epd_w21_write_cmd(0x10)
         self.DC_PIN.on()  # Data mode
 
         if old_file_path is not None:
-            with open(old_file_path, 'rb') as file:
+            with open(old_file_path, "rb") as file:
                 byte = file.read(1)
                 while byte:
                     self.cs.low()
-                    self.spi.write(bytes(byte))  # Convert each byte to bytearray for SPI
+                    self.spi.write(
+                        bytes(byte)
+                    )  # Convert each byte to bytearray for SPI
                     self.cs.high()
                     byte = file.read(1)
                     utime.sleep_us(10)
         else:
-            for _ in range(0,(self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
+            for _ in range(0, (self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
                 self.cs.low()
                 self.spi.write(bytes(0xFF))  # Convert data to bytes before sending
                 self.cs.high()
                 utime.sleep_us(1)
 
-
         # Transfer new data
         self.epd_w21_write_cmd(0x13)
-        self.DC_PIN.on()  # Data mode          
+        self.DC_PIN.on()  # Data mode
         count = 0
-        with open(file_path, 'rb') as file:
+        with open(file_path, "rb") as file:
             byte = file.read(1)
             while byte:
                 self.cs.low()
@@ -309,26 +497,24 @@ class einkDSP_SAM:
         self.epd_w21_write_cmd(0x12)
         self.delay_xms(1)  # Necessary delay for the display refresh
         self.lcd_chkstatus()  # Check if the display is ready
-    
+
     def PIC_clear(self):
         # Assuming oldData is properly initialized and accessible
-    
+
         # Transfer old data
         self.epd_w21_write_cmd(0x10)
         self.DC_PIN.on()  # Data mode
 
-      
-        for _ in range(0,(self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
+        for _ in range(0, (self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
             self.cs.low()
             self.spi.write(bytes(0x00))  # Convert data to bytes before sending
             self.cs.high()
             utime.sleep_us(1)
 
-
         # Transfer new data
         self.epd_w21_write_cmd(0x13)
-        self.DC_PIN.on()  # Data mode          
-        for _ in range(0,(self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
+        self.DC_PIN.on()  # Data mode
+        for _ in range(0, (self.EPD_WIDTH * self.EPD_HEIGHT) // 8):
             self.cs.low()
             self.spi.write(bytes(0x00))  # Convert data to bytes before sending
             self.cs.high()
@@ -340,6 +526,7 @@ class einkDSP_SAM:
         self.epd_w21_write_cmd(0x12)
         self.delay_xms(1)  # Necessary delay for the display refresh
         self.lcd_chkstatus()  # Check if the display is ready
+
 
 # einkMux = machine.Pin(22, machine.Pin.OUT)
 # einkStatus = machine.Pin(9, machine.Pin.OUT)
