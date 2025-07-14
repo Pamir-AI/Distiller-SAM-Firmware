@@ -7,6 +7,11 @@ import struct
 
 class PamirUartProtocols:
     
+    # RP2040 Firmware version constants for protocol negotiation
+    FIRMWARE_VERSION_MAJOR = 1
+    FIRMWARE_VERSION_MINOR = 0
+    FIRMWARE_VERSION_PATCH = 0
+    
     # Message type constants (3 MSB of type_flags)
     TYPE_BUTTON = 0x00      # 0b000xxxxx - Button state change events
     TYPE_LED = 0x20         # 0b001xxxxx - LED control commands and status
@@ -491,3 +496,78 @@ class PamirUartProtocols:
         
         type_flags = packet_bytes[0]
         return type_flags & 0xE0
+    
+    # ==================== SYSTEM COMMANDS PROTOCOL ====================
+    
+    def create_system_ping_packet(self):
+        """Create system ping packet FROM RP2040 TO SoM
+        
+        Returns:
+            bytes: 4-byte ping packet ready for UART transmission
+        """
+        return self.create_packet(0xC0, 0x00, 0x00)
+    
+    def create_system_pong_packet(self):
+        """Create system pong response packet FROM RP2040 TO SoM
+        
+        Returns:
+            bytes: 4-byte pong packet ready for UART transmission
+        """
+        return self.create_packet(0xC0, 0x01, 0x00)
+    
+    def create_firmware_version_packet(self):
+        """Create firmware version packet FROM RP2040 TO SoM
+        
+        Returns:
+            bytes: 4-byte version packet ready for UART transmission
+        """
+        # Pack version as: MAJOR.MINOR.PATCH into 2 bytes
+        # data[0] = MAJOR (8 bits), data[1] = MINOR (4 bits) | PATCH (4 bits)
+        version_data0 = self.FIRMWARE_VERSION_MAJOR & 0xFF
+        version_data1 = ((self.FIRMWARE_VERSION_MINOR & 0x0F) << 4) | (self.FIRMWARE_VERSION_PATCH & 0x0F)
+        return self.create_packet(0xC2, version_data0, version_data1)
+    
+    def parse_system_packet(self, packet_bytes):
+        """Parse system packet and return system command data
+        
+        Args:
+            packet_bytes: 4-byte packet from UART
+            
+        Returns:
+            tuple: (valid, system_data) where system_data contains command info
+        """
+        valid, parsed = self.validate_packet(packet_bytes)
+        if not valid:
+            return False, None
+        
+        type_flags, data0, data1, checksum = parsed
+        
+        # Check if this is a system packet
+        if (type_flags & 0xE0) != 0xC0:
+            return False, None
+        
+        # Extract system command from full type_flags
+        command = type_flags & 0x1F
+        
+        if command == 0x00:
+            # Ping command
+            system_data = {'command': 'ping'}
+        elif command == 0x01:
+            # Pong response
+            system_data = {'command': 'pong'}
+        elif command == 0x02:
+            # Version request
+            system_data = {'command': 'version_request'}
+        elif command == 0x03:
+            # Reset command
+            system_data = {'command': 'reset', 'reset_type': data0}
+        else:
+            # Unknown system command
+            system_data = {
+                'command': 'unknown',
+                'raw_command': command,
+                'data0': data0,
+                'data1': data1
+            }
+        
+        return True, system_data
