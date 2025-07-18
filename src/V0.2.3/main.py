@@ -274,14 +274,11 @@ def process_power_packet(packet_data):
                 cmd_type = power_data.get("command", "unknown")
 
                 if cmd_type == "query":
+                    # Don't respond to query packets to prevent infinite loop
                     current_state = power_manager.get_power_state()
-                    packet = protocol.create_power_status_packet_rp2040_to_som(
-                        current_state, 0x00
-                    )
-                    uart0.write(packet)
-                    debug.log_info(
+                    debug.log_verbose(
                         debug.CAT_POWER,
-                        f"Power status sent: 0x{current_state:02X} -> TX: {packet.hex()}",
+                        f"Power query received: current state 0x{current_state:02X} (no response sent)",
                     )
 
                 elif cmd_type == "set_state":
@@ -327,7 +324,7 @@ def process_power_packet(packet_data):
                         packet = protocol.create_power_metrics_packet_rp2040_to_som(
                             metric_type, value
                         )
-                        uart0.write(bytes(packet))
+                        uart0.write(packet)
 
                     debug.log_info(debug.CAT_POWER, f"Metrics sent: {metrics}")
 
@@ -408,10 +405,6 @@ def process_uart_packet(packet_data):
         process_led_packet(packet_data)
     elif packet_type == protocol.TYPE_POWER:
         debug.log_info(debug.CAT_POWER, f"Processing POWER packet: {packet_data.hex()}")
-        process_power_packet(packet_data)
-    elif packet_data[0] == protocol.POWER_CMD_REQUEST_METRICS:
-        # Special case: POWER_CMD_REQUEST_METRICS (0x80) is a complete packet type
-        debug.log_info(debug.CAT_POWER, f"Processing POWER_CMD_REQUEST_METRICS packet: {packet_data.hex()}")
         process_power_packet(packet_data)
     elif packet_type == protocol.TYPE_DISPLAY:
         debug.log_info(

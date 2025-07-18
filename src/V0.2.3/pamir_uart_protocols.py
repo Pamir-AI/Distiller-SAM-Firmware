@@ -7,9 +7,9 @@ class PamirUartProtocols:
     """Pamir UART Protocols for RP2040"""
 
     # RP2040 Firmware version constants for protocol negotiation
-    FIRMWARE_VERSION_MAJOR = 1
-    FIRMWARE_VERSION_MINOR = 0
-    FIRMWARE_VERSION_PATCH = 0
+    FIRMWARE_VERSION_MAJOR = 0
+    FIRMWARE_VERSION_MINOR = 2
+    FIRMWARE_VERSION_PATCH = 3
 
     # Message type constants (3 MSB of type_flags)
     TYPE_BUTTON = 0x00  # 0b000xxxxx - Button state change events
@@ -31,26 +31,28 @@ class PamirUartProtocols:
     LED_CMD_QUEUE = 0x00  # Queue instruction (E=0)
     LED_CMD_EXECUTE = 0x10  # Execute sequence (E=1)
 
-    # LED modes/commands
+    # LED modes/commands (2-bit values)
     LED_MODE_STATIC = 0x00  # Static color
-    LED_MODE_BLINK = 0x04  # Blinking
-    LED_MODE_FADE = 0x08  # Fade in/out
-    LED_MODE_RAINBOW = 0x0C  # Rainbow cycle
-    LED_MODE_SEQUENCE = 0x10  # Custom sequence
+    LED_MODE_BLINK = 0x01  # Blinking
+    LED_MODE_FADE = 0x02  # Fade in/out
+    LED_MODE_RAINBOW = 0x03  # Rainbow cycle
 
     # Special LED IDs
     LED_ALL = 0x0F  # Broadcast to all LEDs (ID 15)
 
-    # Power command constants
+    # Power command constants 
+    # Control commands (0x00-0x0F)
     POWER_CMD_QUERY = 0x00  # Query current power status
-    POWER_CMD_SET = 0x10  # Set power state
-    POWER_CMD_SLEEP = 0x20  # Enter sleep mode
-    POWER_CMD_SHUTDOWN = 0x30  # Shutdown system
-    POWER_CMD_CURRENT = 0x40  # Current draw reporting
-    POWER_CMD_BATTERY = 0x50  # Battery state reporting
-    POWER_CMD_TEMP = 0x60  # Temperature reporting
-    POWER_CMD_VOLTAGE = 0x70  # Voltage reporting
-    POWER_CMD_REQUEST_METRICS = 0x80  # Request all metrics
+    POWER_CMD_SET = 0x01  # Set power state
+    POWER_CMD_SLEEP = 0x02  # Enter sleep mode
+    POWER_CMD_SHUTDOWN = 0x03  # Shutdown system
+    
+    # Reporting commands (0x10-0x1F)
+    POWER_CMD_CURRENT = 0x10  # Current draw reporting
+    POWER_CMD_BATTERY = 0x11  # Battery state reporting
+    POWER_CMD_TEMP = 0x12  # Temperature reporting
+    POWER_CMD_VOLTAGE = 0x13  # Voltage reporting
+    POWER_CMD_REQUEST_METRICS = 0x1F  # Request all metrics
 
     # Power states
     POWER_STATE_OFF = 0x00  # System off
@@ -61,12 +63,25 @@ class PamirUartProtocols:
     def __init__(self):
         pass
 
+    def calculate_crc8(self, data):
+        """Calculate CRC8 checksum using polynomial 0x07"""
+        crc = 0x00
+        for byte in data:
+            crc ^= byte
+            for _ in range(8):
+                if crc & 0x80:
+                    crc = (crc << 1) ^ 0x07
+                else:
+                    crc <<= 1
+                crc &= 0xFF  # Keep it as 8-bit
+        return crc
+    
     def calculate_checksum(self, type_flags, data0, data1):
-        """Calculate XOR checksum for packet"""
-        return type_flags ^ data0 ^ data1
+        """Calculate CRC8 checksum for packet"""
+        return self.calculate_crc8([type_flags, data0, data1])
 
     def create_packet(self, type_flags, data0=0x00, data1=0x00):
-        """Create a 4-byte protocol packet with checksum"""
+        """Create a 4-byte protocol packet with CRC8 checksum"""
         checksum = self.calculate_checksum(type_flags, data0, data1)
         return struct.pack("BBBB", type_flags, data0, data1, checksum)
 
@@ -163,25 +178,19 @@ class PamirUartProtocols:
         Returns:
             bytes: 4-byte packet ready for UART transmission
         """
-        # Start with TYPE_LED (0b001xxxxx)
+        # format: type_flags = [001][E][LED_ID]
         type_flags = self.TYPE_LED
 
         # Add execute flag (bit 4)
         if execute:
             type_flags |= self.LED_CMD_EXECUTE
 
-        # Encoding scheme depends on LED ID range
-        if led_id <= 3:
-            # Legacy encoding: mode in bits 3-2, LED ID in bits 1-0
-            type_flags |= mode & 0x0C  # Add LED mode (bits 3-2)
-            type_flags |= led_id & 0x03  # Add LED ID (bits 1-0)
-        else:
-            # Extended encoding: LED ID in full 4 bits (4-15), mode is ignored
-            type_flags |= led_id & 0x0F  # Use full 4 bits for LED ID
+        # Add LED ID (bits 3-0)
+        type_flags |= led_id & 0x0F
 
-        # Pack color data: data[0] = RRRRGGGG, data[1] = BBBBTTTT
+        # Pack color data: data[0] = RRRRGGGG, data[1] = BBBBMMTT
         data0 = ((r4 & 0x0F) << 4) | (g4 & 0x0F)
-        data1 = ((b4 & 0x0F) << 4) | (time_value & 0x0F)
+        data1 = ((b4 & 0x0F) << 4) | ((mode & 0x03) << 2) | (time_value & 0x03)
 
         return self.create_packet(type_flags, data0, data1)
 
@@ -267,31 +276,20 @@ class PamirUartProtocols:
 
         # Extract LED command fields
         execute = bool(type_flags & self.LED_CMD_EXECUTE)
+        led_id = type_flags & 0x0F  # LED ID is in bits 3-0 (0-15)
         
-        if execute:
-            # For execute packets (acknowledgments), use full 4 bits for LED ID
-            led_id = type_flags & 0x0F
-            led_mode = 0  # Execute packets don't encode mode
-        else:
-            # For command packets, determine encoding based on lower 4 bits value
-            lower_4bits = type_flags & 0x0F
-            
-            # If lower 4 bits <= 3, use legacy encoding (mode + LED ID)
-            # If lower 4 bits >= 4, use extended encoding (LED ID only, static mode)
-            if lower_4bits <= 3:
-                # Legacy encoding: mode in bits 3-2, LED ID in bits 1-0
-                led_mode = type_flags & 0x0C  # Extract mode bits (bits 3-2)
-                led_id = type_flags & 0x03    # LED ID is bits 1-0 (0-3)
-            else:
-                # Extended encoding: full 4 bits for LED ID, default to static mode
-                led_id = lower_4bits  # LED ID 4-15
-                led_mode = self.LED_MODE_STATIC  # Default to static mode
+        # Extract RGB values from data[0]
+        r4 = (data0 >> 4) & 0x0F  # Red in bits 7-4
+        g4 = data0 & 0x0F         # Green in bits 3-0
+        
+        # Extract blue, mode, and timing from data[1]
+        b4 = (data1 >> 4) & 0x0F  # Blue in bits 7-4
+        led_mode = (data1 >> 2) & 0x03  # Mode in bits 3-2
+        time_value = data1 & 0x03  # Timing in bits 1-0
 
-        # Extract color data
-        r4 = (data0 >> 4) & 0x0F
-        g4 = data0 & 0x0F
-        b4 = (data1 >> 4) & 0x0F
-        time_value = data1 & 0x0F
+        # Convert timing value to delay_ms
+        timing_map = {0: 100, 1: 200, 2: 500, 3: 1000}
+        delay_ms = timing_map.get(time_value, 100)
 
         led_data = {
             "execute": execute,
@@ -299,7 +297,7 @@ class PamirUartProtocols:
             "led_mode": led_mode,
             "color": (r4, g4, b4),
             "time_value": time_value,
-            "delay_ms": (time_value + 1) * 100,
+            "delay_ms": delay_ms,
         }
 
         return True, led_data
@@ -440,13 +438,10 @@ class PamirUartProtocols:
 
         type_flags, data0, data1, checksum = parsed
 
-       # Check if this is a power packet or special POWER_CMD_REQUEST_METRICS
+       # Check if this is a power packet
         if (type_flags & 0xE0) == self.TYPE_POWER:
-            # Standard power packet - extract power command from 5 LSB
+            # Extract power command from 5 LSB (supports both control and reporting commands)
             command = type_flags & 0x1F
-        elif type_flags == self.POWER_CMD_REQUEST_METRICS:
-            # Special case: POWER_CMD_REQUEST_METRICS is a complete packet type (0x80)
-            command = self.POWER_CMD_REQUEST_METRICS
         else:
             return False, None
 
