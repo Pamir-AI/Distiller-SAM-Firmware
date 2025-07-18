@@ -27,6 +27,7 @@ UART_RX_PIN = 1
 DEBUG_LED_PIN = 20
 LED_BAR_PIN = 6
 BUTTON_DEBOUNCE_MS = 50
+EINK_ANIMATION_MAX_CYCLES = 2
 
 # Initialize global components
 debug = init_debug_handler(
@@ -604,9 +605,9 @@ def eink_display_task():
             with open("./loading2.bin", "rb") as f:
                 image2_data = f.read()
 
-            # Animation loop - continue until display release signal received
+            # Animation loop - continue until display release signal received or max cycles reached
             cycle = 0
-            while not display_release_received:
+            while not display_release_received and cycle < EINK_ANIMATION_MAX_CYCLES:
                 # Animate between frames
                 eink.epd_display_part_all(image2_data)
                 
@@ -634,12 +635,18 @@ def eink_display_task():
                     utime.sleep_ms(50)
                     debug.log_info(debug.CAT_DISPLAY, f"Animation cycle {cycle} - waiting for Pi boot")
 
+            # Log why the animation loop ended
+            if display_release_received:
+                debug.log_info(debug.CAT_DISPLAY, f"Animation ended after {cycle} cycles - Pi boot signal received")
+            else:
+                debug.log_info(debug.CAT_DISPLAY, f"Animation ended after {cycle} cycles - timeout reached ({EINK_ANIMATION_MAX_CYCLES} max)")
+
         except OSError:
             set_debug_color("ERROR")
             debug.log_error(debug.CAT_DISPLAY, "Animation files not found")
 
-        # Release eink control when Pi has booted
-        debug.log_info(debug.CAT_DISPLAY, "Pi boot detected - releasing eink control")
+        # Release eink control when Pi has booted or timeout reached
+        debug.log_info(debug.CAT_DISPLAY, "Releasing eink control")
         eink.de_init()  # Release GPIO on RP2040 and set to high Z
         einkMux.low()   # Reroute eink communication to Raspberry Pi
         debug.log_info(debug.CAT_DISPLAY, "E-ink display task completed - control handed to Pi")
