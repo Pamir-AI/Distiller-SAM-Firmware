@@ -187,8 +187,8 @@ class UartHandler:
         if len(packet_data) != 4:
             return False
 
-        # Basic checksum validation
-        calculated_checksum = packet_data[0] ^ packet_data[1] ^ packet_data[2]
+        # CRC8 checksum validation using protocol's CRC8 algorithm
+        calculated_checksum = self.protocol.calculate_crc8(packet_data[:3])
         return calculated_checksum == packet_data[3]
 
     def _handle_sync_loss(self):
