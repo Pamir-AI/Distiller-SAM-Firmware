@@ -14,9 +14,7 @@ import argparse
 from pathlib import Path
 
 # Configuration Constants
-UF2_DIRECTORY = (
-    "/Users/chengmingzhang/CodingProjects/Software/Distiller-SAM-Firmware/ULP"
-)
+UF2_DIRECTORY = Path(__file__).resolve().parent.parent.parent / "ULP"
 VOLUME_PATHS = ["/Volumes/RPI-RP2 1", "/Volumes/RPI-RP2"]  # Try numbered volume first
 UART_PORT_PATTERN = "/dev/tty.usb*"
 
