@@ -7,7 +7,7 @@ import struct
 import time
 import machine
 
-verbose = True # [Set true when debugging]
+verbose = False # [Set true when debugging]
 
 
 class BQ27441:
@@ -58,7 +58,7 @@ class BQ27441:
         self._wr(0x61, b"\x00")  # BlockDataControl = 0
         self._wr(0x3E, bytes([subclass_id]))  # DataClass
         self._wr(0x3F, bytes([offset // 32]))  # Block offset 0-7
-        time.sleep_ms(2)
+        time.sleep_ms(10) #This delay is needed for the BQ27441 to process the command
 
         # 2 read current 32-byte buffer
         buf = bytearray(self._rd(0x40, 32))
@@ -72,18 +72,18 @@ class BQ27441:
         csum = (0xFF - (sum(buf) & 0xFF)) & 0xFF
         self._wr(0x60, bytes([csum]))
 
-        # 6: **Read back the bytes that were written to verify success**
-        readback = bytearray(self._rd(0x40 + start, len(payload)))
-        if readback != bytearray(payload):
-            if verbose:
-                print("[EXT-WRITE][FAIL] subclass=0x{0:02X} offset=0x{1:02X} "
-                      "wrote={2} read={3} 可能原因: 字节序错误 / 未进入CFGUPDATE / 校验和错误 / I2C失败"
-                      .format(subclass_id, offset, payload.hex(), readback.hex()))
-        else:
-            if verbose:
-                print("[EXT-WRITE][OK]   subclass=0x{0:02X} offset=0x{1:02X} data={2}"
-                      .format(subclass_id, offset, readback.hex()))
-        return bytes(readback)
+    # # 6: **Read back the bytes that were written to verify success**
+    # readback = bytearray(self._rd(0x40 + start, len(payload)))
+    # if readback != bytearray(payload):
+    #     if verbose:
+    #         print("[EXT-WRITE][FAIL] subclass=0x{0:02X} offset=0x{1:02X} "
+    #               "wrote={2} read={3} 可能原因: 字节序错误 / 未进入CFGUPDATE / 校验和错误 / I2C失败"
+    #               .format(subclass_id, offset, payload.hex(), readback.hex()))
+    # else:
+    #     if verbose:
+    #         print("[EXT-WRITE][OK]   subclass=0x{0:02X} offset=0x{1:02X} data={2}"
+    #               .format(subclass_id, offset, readback.hex()))
+    # return bytes(readback)
 
     # ---------- public one-shot initialiser ----------
     def initialise(

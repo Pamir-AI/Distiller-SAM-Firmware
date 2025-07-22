@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-简化版 RP2040 烧录脚本
+简化版 RP2040 烧录脚本 for Window
+Rongbo Hu 7 22
+1.运行本脚本（注意：记得在本文件夹中放一个ULP文件夹）
+2.按住BOOT键插入RP2040
+3.等待脚本自动烧录
 """
 
 import os
@@ -19,7 +23,8 @@ UPLOAD_FILES = [
     "battery.py",
     "debug_handler.py",
     "uart_handler.py",
-    "threaded_task_manager.py"
+    "threaded_task_manager.py",
+    "main.py"
 ]
 
 def find_rp2040_drive():
