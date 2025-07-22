@@ -130,7 +130,7 @@ class BQ27441:
 
     def remain_capacity(self):
         """Get the remaining capacity in mAh."""
-        return self._rd_word(0x1C)
+        return self._rd_word(0x0C)
 
     def voltage_V(self):
         """Get the battery voltage in volts."""
@@ -144,6 +144,42 @@ class BQ27441:
         """Get the average current in milliamperes."""
         raw = self._rd_word(0x10)
         return raw - 0x10000 if raw & 0x8000 else raw
+
+    def i2c_get_Control(self):
+        """Get the control register value."""
+        return self._rd_word(0x00)
+    
+    def i2c_get_flags(self):
+        """Get the flags register value."""
+        return self._rd_word(0x06)
+    
+    def i2c_get_stateofcharge(self):
+        """Get the state of charge register value in %."""
+        return self._rd_word(0x1C)
+
+    def i2c_get_NominalAvailableCapacity(self):
+        """Get the nominal available capacity register value in mAh."""
+        return self._rd_word(0x08)
+
+    def i2c_get_FullAvailableCapacity(self):
+        """Get the full available capacity register value in mAh."""
+        return self._rd_word(0x0A)
+    
+    def i2c_get_FullChargeCapacity(self):
+        """Get the full charge capacity register value in mAh."""
+        return self._rd_word(0x0E)
+
+    def i2c_get_StandbyCurrent(self):
+        """Get the standby current register value in mA."""
+        return self._rd_word(0x12)
+    
+    def i2c_get_StateOfHealth(self):
+        """Get the state of health register value."""
+        return self._rd_word(0x20)
+    
+    def i2c_get_DesignCapacity(self):
+        """Get the design capacity register value in mAh."""
+        return self._rd_word(0x3c)
 
     # Add additional methods here for other registers you need to interface with
 
