@@ -55,18 +55,6 @@ usb_switch_s = machine.Pin(23, machine.Pin.OUT, value=0)
 # Debug RGB LED
 debug_rgb = neopixel.NeoPixel(machine.Pin(DEBUG_LED_PIN), 1)
 
-DEBUG_COLORS = {
-    "OFF": (0, 0, 0),
-    "INIT": (255, 0, 0),  # Red - Initialization
-    "EINK_RUNNING": (255, 255, 255),  # White - EINK_RUNNING
-    "UART_READY": (0, 255, 0),  # Green - UART ready
-    "MAIN_LOOP": (0, 0, 255),  # Blue - Main loop
-    "ERROR": (255, 0, 255),  # Magenta - Error
-    "PACKET_RX": (0, 255, 255),  # Cyan - Packet received
-    "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
-    "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
-}
-
 
 def set_debug_color(color_name):
     """Set debug RGB color with error handling"""
@@ -90,6 +78,30 @@ def switch_usb(usb_type):
         debug.log_info(debug.CAT_SYSTEM, f"USB switched to {usb_type}")
     else:
         debug.log_error(debug.CAT_SYSTEM, f"Invalid USB type: {usb_type}")
+
+
+DEBUG_COLORS = {
+    "OFF": (0, 0, 0),
+    "INIT": (255, 0, 0),  # Red - Initialization
+    "EINK_RUNNING": (255, 255, 255),  # White - EINK_RUNNING
+    "UART_READY": (0, 255, 0),  # Green - UART ready
+    "MAIN_LOOP": (0, 0, 255),  # Blue - Main loop
+    "ERROR": (255, 0, 255),  # Magenta - Error
+    "PACKET_RX": (0, 255, 255),  # Cyan - Packet received
+    "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
+    "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
+    "DEBUG_MODE": (255, 255, 0),  # Yellow - Debug mode
+}
+
+# CM5 Firmware Upload Mode
+if upBTN.value():
+    wdt.feed()
+    # Switch USB to SOM_USB
+    switch_usb("SOM_USB")
+    set_debug_color("DEBUG_MODE")
+    while True:
+        wdt.feed()
+        utime.sleep_ms(1000) 
 
 
 # Initialize components
@@ -684,7 +696,7 @@ def eink_display_task():
 
 
 # Run E-ink task directly on core 0 (blocking)
-# eink_display_task()
+eink_display_task()
 
 # Main loop (runs on Core 0)
 debug.log_info(debug.CAT_SYSTEM, "=== Main loop starting ===")
