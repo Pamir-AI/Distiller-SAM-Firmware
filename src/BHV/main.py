@@ -12,7 +12,8 @@ from neopixel_controller import NeoPixelController
 from power_manager import PowerManager
 
 # KEEP THIS LINE FIRST LINE OF THE FILE
-pmic_enable = machine.Pin(3, machine.Pin.IN, pull=None)
+pmic_enable = machine.Pin(3, machine.Pin.OPEN_DRAIN, value=0)  # CM5 OFF by default
+pmic_enable.value(0)
 
 # Configuration
 PRODUCTION = False  # Set to True for production builds
@@ -48,10 +49,8 @@ downBTN = machine.Pin(18, machine.Pin.IN, machine.Pin.PULL_DOWN)
 einkStatus = machine.Pin(9, machine.Pin.OUT)
 einkMux = machine.Pin(22, machine.Pin.OUT)
 sam_interrupt = machine.Pin(2, machine.Pin.OUT)
-
 # USB switch configuration
 usb_switch_s = machine.Pin(23, machine.Pin.OUT, value=0)
-
 # Debug RGB LED
 debug_rgb = neopixel.NeoPixel(machine.Pin(DEBUG_LED_PIN), 1)
 
@@ -67,7 +66,6 @@ def set_debug_color(color_name):
         debug.log_error(
             debug.CAT_SYSTEM, f"Failed to set debug color {color_name}: {e}"
         )
-
 
 def switch_usb(usb_type):
     """Switch USB connection"""
@@ -103,10 +101,43 @@ if upBTN.value():
         wdt.feed()
         utime.sleep_ms(1000) 
 
+def set_cm5_power(enable):
+    """Control CM5 power via pmic_enable pin (OPEN_DRAIN mode)
+    
+    Args:
+        enable (bool): True to power on (high-z), False to power off (pull low)
+    """
+    global power_state
+    
+    try:
+        if enable:
+            # Power on: Set pin to high-z (floating) - CM5 can power on
+            pmic_enable.value(1)
+            power_state["cm5_powered"] = True
+            debug.log_info(debug.CAT_POWER, "CM5 powered ON (pmic_enable -> high-z)")
+            set_debug_color("UART_READY")
+        else:
+            # Power off: Pull pin low - CM5 powers off
+            pmic_enable.value(0)
+            power_state["cm5_powered"] = False
+            debug.log_info(debug.CAT_POWER, "CM5 powered OFF (pmic_enable -> low)")
+            set_debug_color("INIT")
+            
+            # Reset system state when powering off
+            reset_system_state()
+            
+        # Update power manager state
+        if enable:
+            power_manager.set_power_state(protocol.POWER_STATE_RUNNING)
+        else:
+            power_manager.set_power_state(protocol.POWER_STATE_OFF)
+            
+    except Exception as e:
+        debug.log_error(debug.CAT_POWER, f"Failed to set CM5 power: {e}")
 
 # Initialize components
 set_debug_color("INIT")
-debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.3 Starting ===")
+debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.4 Starting ===")
 
 # USB switch setup
 switch_usb("SOM_USB")
@@ -132,6 +163,139 @@ debug.log_info(debug.CAT_SYSTEM, "Threaded task manager initialized")
 # Initialize power manager
 power_manager = PowerManager(design_capacity_mah=3000, debug_enabled=not PRODUCTION)
 debug.log_info(debug.CAT_POWER, "Power manager initialized")
+
+
+# Power control functions (must be defined before first use)
+def reset_system_state():
+    """Reset system state when CM5 is powered off"""
+    global display_release_received, einkRunning, power_state
+    
+    # Reset display state
+    display_release_received = False
+    
+    # Stop any running eink operations
+    try:
+        with eink_lock:
+            einkRunning = False
+    except:
+        pass
+    
+    # Reset power-related timers
+    power_state["shutdown_pending"] = False
+    power_state["shutdown_timer"] = 0
+    power_state["force_shutdown_pending"] = False
+    power_state["force_shutdown_timer"] = 0
+    
+    debug.log_info(debug.CAT_SYSTEM, "System state reset for CM5 power off")
+
+
+def check_power_on_trigger():
+    """Check for SELECT button long press to power on CM5"""
+    global power_state
+    
+    current_time = utime.ticks_ms()
+    
+    # If CM5 is already powered, nothing to do
+    if power_state["cm5_powered"]:
+        return
+        
+    # Check SELECT button state
+    if selectBTN.value():
+        # SELECT button is pressed
+        if power_state["select_press_start"] == 0:
+            # First press detected
+            power_state["select_press_start"] = current_time
+            debug.log_info(debug.CAT_POWER, "SELECT button press detected for power-on")
+        else:
+            # Check if long press duration reached
+            press_duration = utime.ticks_diff(current_time, power_state["select_press_start"])
+            if press_duration >= SELECT_LONG_PRESS_MS:
+                # Power on CM5
+                debug.log_info(debug.CAT_POWER, f"SELECT long press ({press_duration}ms) - powering on CM5")
+                set_cm5_power(True)
+                power_state["select_press_start"] = 0  # Reset
+                
+                # Start eink task after power on
+                eink_display_task()
+    else:
+        # SELECT button released - reset timer
+        if power_state["select_press_start"] != 0:
+            press_duration = utime.ticks_diff(current_time, power_state["select_press_start"])
+            debug.log_verbose(debug.CAT_POWER, f"SELECT button released after {press_duration}ms")
+            power_state["select_press_start"] = 0
+
+
+def check_force_shutdown_trigger():
+    """Check for UP+DOWN button long press to force shutdown"""
+    global power_state
+    
+    current_time = utime.ticks_ms()
+    
+    # Check if both UP and DOWN buttons are pressed
+    both_pressed = upBTN.value() and selectBTN.value()
+    
+    if both_pressed:
+        # Both buttons pressed
+        if power_state["force_press_start"] == 0:
+            # First detection of both buttons pressed
+            power_state["force_press_start"] = current_time
+            debug.log_info(debug.CAT_POWER, "UP+DOWN buttons pressed - force shutdown trigger detected")
+        else:
+            # Check if long press duration reached
+            press_duration = utime.ticks_diff(current_time, power_state["force_press_start"])
+            if press_duration >= FORCE_SHUTDOWN_PRESS_MS and not power_state["force_shutdown_pending"]:
+                # Initiate force shutdown
+                debug.log_info(debug.CAT_POWER, f"UP+DOWN long press ({press_duration}ms) - initiating force shutdown")
+                power_state["force_shutdown_pending"] = True
+                power_state["force_shutdown_timer"] = current_time
+                
+                # Send power_pressed event to notify CM5 we're about to force shutdown
+                try:
+                    packet = protocol.create_button_packet(
+                        up_pressed=False,
+                        down_pressed=False,
+                        select_pressed=False,
+                        power_pressed=True,  # This signals force shutdown
+                    )
+                    uart0.write(packet)
+                    debug.log_info(debug.CAT_POWER, f"Force shutdown warning sent to CM5 -> TX: {packet.hex()}")
+                except Exception as e:
+                    debug.log_error(debug.CAT_POWER, f"Failed to send force shutdown warning: {e}")
+    else:
+        # Buttons released - reset timer
+        if power_state["force_press_start"] != 0:
+            press_duration = utime.ticks_diff(current_time, power_state["force_press_start"])
+            debug.log_verbose(debug.CAT_POWER, f"UP+DOWN buttons released after {press_duration}ms")
+            power_state["force_press_start"] = 0
+
+
+def handle_power_timers():
+    """Handle shutdown delay timers"""
+    global power_state
+    
+    current_time = utime.ticks_ms()
+    
+    # Handle normal shutdown timer
+    if power_state["shutdown_pending"]:
+        elapsed = utime.ticks_diff(current_time, power_state["shutdown_timer"])
+        if elapsed >= NORMAL_SHUTDOWN_DELAY_MS:
+            debug.log_info(debug.CAT_POWER, f"Normal shutdown delay ({elapsed}ms) complete - powering off CM5")
+            set_cm5_power(False)
+            power_state["shutdown_pending"] = False
+            power_state["shutdown_timer"] = 0
+    
+    # Handle force shutdown timer
+    if power_state["force_shutdown_pending"]:
+        elapsed = utime.ticks_diff(current_time, power_state["force_shutdown_timer"])
+        if elapsed >= FORCE_SHUTDOWN_DELAY_MS:
+            debug.log_info(debug.CAT_POWER, f"Force shutdown delay ({elapsed}ms) complete - powering off CM5")
+            set_cm5_power(False)
+            power_state["force_shutdown_pending"] = False
+            power_state["force_shutdown_timer"] = 0
+            
+            ##Reset RP2040 using machine.reset()
+            machine.reset()
+            
 
 
 # LED completion callback
@@ -179,9 +343,30 @@ einkStatus.high()  # SOM CONTROL E-INK
 
 debug.log_info(debug.CAT_SYSTEM, "Hardware initialization complete")
 
+# Initial power control - turn off CM5 at startup (after all components initialized)
+debug.log_info(debug.CAT_POWER, "Setting initial CM5 power state to OFF")
+set_cm5_power(False)
+
 # Global state
 button_state_cache = {"up": False, "down": False, "select": False, "power": False}
 display_release_received = False  # Flag to track display release signal
+
+# Power management state
+power_state = {
+    "cm5_powered": False,  # Current CM5 power state
+    "shutdown_pending": False,  # Shutdown notification received
+    "shutdown_timer": 0,  # Countdown for shutdown delay
+    "force_shutdown_pending": False,  # Force shutdown initiated
+    "force_shutdown_timer": 0,  # Countdown for force shutdown
+    "select_press_start": 0,  # Time when SELECT button was first pressed
+    "force_press_start": 0,  # Time when UP+DOWN was first pressed
+}
+
+# Timing constants
+SELECT_LONG_PRESS_MS = 3000  # 3 seconds for power on
+FORCE_SHUTDOWN_PRESS_MS = 5000  # 5 seconds for force shutdown
+NORMAL_SHUTDOWN_DELAY_MS = 2000  # 2 seconds delay for normal shutdown
+FORCE_SHUTDOWN_DELAY_MS = 3000  # 3 seconds delay for force shutdown
 
 # E-ink state variables (needed for proper eink control)
 import _thread
@@ -321,6 +506,18 @@ def process_power_packet(packet_data):
                     shutdown_mode = power_data.get("shutdown_mode", 0)
                     reason_code = power_data.get("reason_code", 0)
                     power_manager.handle_shutdown_command(shutdown_mode, reason_code)
+                    
+                    # Handle CM5 shutdown notification with delay
+                    global power_state
+                    if power_state["cm5_powered"] and not power_state["shutdown_pending"]:
+                        power_state["shutdown_pending"] = True
+                        power_state["shutdown_timer"] = utime.ticks_ms()
+                        debug.log_info(
+                            debug.CAT_POWER, 
+                            f"Shutdown notification received: mode={shutdown_mode}, reason={reason_code}, will power off CM5 in {NORMAL_SHUTDOWN_DELAY_MS}ms"
+                        )
+                    
+                    # Send acknowledgment
                     packet = protocol.create_power_status_packet_rp2040_to_som(
                         protocol.POWER_STATE_OFF, shutdown_mode
                     )
@@ -392,9 +589,15 @@ def process_display_packet(packet_data):
         debug.log_verbose(debug.CAT_DISPLAY, f"Display command: {display_data}")
 
         if display_data["command"] == "release":
-            global display_release_received
+            global display_release_received, power_state
             display_release_received = True
-            debug.log_info(debug.CAT_DISPLAY, "Display release signal received - Pi has booted")
+            
+            # Only process if CM5 is actually powered (should be the case)
+            if power_state["cm5_powered"]:
+                debug.log_info(debug.CAT_DISPLAY, "Display release signal received - CM5 has booted")
+            else:
+                debug.log_warning(debug.CAT_DISPLAY, "Display release received but CM5 not powered - ignoring")
+                return
             
             # Send acknowledgment
             def send_display_ack():
@@ -503,13 +706,17 @@ downBTN.irq(
 
 # Boot notification
 def send_boot_notification():
-    """Send boot notification to SoM"""
+    """Send boot notification to SoM (only if CM5 is powered)"""
+    global power_state
     try:
-        packet = protocol.create_power_status_packet_rp2040_to_som(
-            protocol.POWER_STATE_RUNNING, 0x00
-        )
-        uart0.write(packet)
-        debug.log_info(debug.CAT_POWER, "Boot notification sent to SoM")
+        if power_state["cm5_powered"]:
+            packet = protocol.create_power_status_packet_rp2040_to_som(
+                protocol.POWER_STATE_RUNNING, 0x00
+            )
+            uart0.write(packet)
+            debug.log_info(debug.CAT_POWER, "Boot notification sent to CM5")
+        else:
+            debug.log_verbose(debug.CAT_POWER, "Boot notification skipped - CM5 not powered")
     except Exception as e:
         debug.log_error(debug.CAT_POWER, f"Boot notification failed: {e}")
 
@@ -592,10 +799,15 @@ task_manager.submit_uart_task("UART_COMMUNICATION", uart_communication_task)
 # E-ink display task (high priority, blocking)
 def eink_display_task():
     """E-ink display animation task - runs with high priority until Pi boots"""
-    global display_release_received, einkRunning
+    global display_release_received, einkRunning, power_state
     
     try:
-        debug.log_info(debug.CAT_DISPLAY, "Starting E-ink display task - waiting for Pi boot")
+        # Check if CM5 is powered before starting
+        if not power_state["cm5_powered"]:
+            debug.log_info(debug.CAT_DISPLAY, "E-ink task aborted - CM5 not powered")
+            return
+            
+        debug.log_info(debug.CAT_DISPLAY, "Starting E-ink display task - waiting for CM5 boot")
 
         # Import and initialize E-ink 
         from eink_driver_sam import einkDSP_SAM
@@ -629,16 +841,20 @@ def eink_display_task():
             utime.sleep_ms(1300)  # give time for first refresh, no lower than 1300
             debug.log_info(debug.CAT_DISPLAY, "LUT mode - waiting for refresh completion")
       
-        # Animation loop using V0.2.1 logic, but with display_release_received check
+        # Animation loop with additional power state checks
         repeat = 0
-        while einkRunning and not display_release_received:
+        while einkRunning and not display_release_received and power_state["cm5_powered"]:
             with eink_lock:
                 if not einkRunning or repeat >= EINK_ANIMATION_TIMEOUT:
                     break
             
-            # Check for display release signal before each animation step
+            # Check for display release signal or power off before each animation step
             if display_release_received:
                 debug.log_info(debug.CAT_DISPLAY, "Display release signal received during animation")
+                break
+                
+            if not power_state["cm5_powered"]:
+                debug.log_info(debug.CAT_DISPLAY, "CM5 powered off during animation - stopping")
                 break
                 
             try:
@@ -646,7 +862,7 @@ def eink_display_task():
                 eink.PIC_display('./loading1.bin', './loading2.bin')
                 
                 # Check during animation
-                if display_release_received:
+                if display_release_received or not power_state["cm5_powered"]:
                     break
                     
                 eink.epd_init_part()
@@ -657,9 +873,9 @@ def eink_display_task():
                 
                 debug.log_verbose(debug.CAT_DISPLAY, f"Animation cycle {repeat} completed")
                 
-                # Yield and check for release signal
+                # Yield and check for release signal or power state
                 for i in range(5):  # Brief yield with checks
-                    if display_release_received:
+                    if display_release_received or not power_state["cm5_powered"]:
                         break
                     utime.sleep_ms(10)
                     
@@ -674,13 +890,15 @@ def eink_display_task():
         einkMux.low()
         
         if display_release_received:
-            debug.log_info(debug.CAT_DISPLAY, "Pi boot detected - releasing eink control")
+            debug.log_info(debug.CAT_DISPLAY, "CM5 boot detected - releasing eink control")
+        elif not power_state["cm5_powered"]:
+            debug.log_info(debug.CAT_DISPLAY, "CM5 powered off - releasing eink control")
         elif repeat >= EINK_ANIMATION_TIMEOUT:
             debug.log_info(debug.CAT_DISPLAY, f"Animation timeout reached ({EINK_ANIMATION_TIMEOUT} cycles) - releasing eink control")
         else:
             debug.log_info(debug.CAT_DISPLAY, "Animation completed - releasing eink control")
             
-        debug.log_info(debug.CAT_DISPLAY, "E-ink display task completed - control handed to Pi")
+        debug.log_info(debug.CAT_DISPLAY, "E-ink display task completed")
 
     except Exception as e:
         set_debug_color("ERROR")
@@ -695,11 +913,12 @@ def eink_display_task():
             pass
 
 
-# Run E-ink task directly on core 0 (blocking)
-eink_display_task()
+# Note: E-ink task will only run when CM5 is powered on via SELECT button long press
+# This prevents the boot animation from running when CM5 is off
 
 # Main loop (runs on Core 0)
 debug.log_info(debug.CAT_SYSTEM, "=== Main loop starting ===")
+debug.log_info(debug.CAT_POWER, "System ready - press SELECT for 3s to power on CM5, or UP+DOWN for 5s to force shutdown")
 set_debug_color("MAIN_LOOP")
 
 # Main application loop
@@ -727,6 +946,11 @@ while True:
 
             debug.log_info(debug.CAT_SYSTEM, "System heartbeat")
             last_heartbeat = current_time
+
+        # Power management triggers
+        check_power_on_trigger()
+        check_force_shutdown_trigger()
+        handle_power_timers()
 
         # Sleep to allow other tasks to run
         utime.sleep_ms(100)
