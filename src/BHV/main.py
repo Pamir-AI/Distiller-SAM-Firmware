@@ -929,33 +929,52 @@ while True:
     try:
         wdt.feed()
 
-        # Periodic health checks
-        current_time = utime.ticks_ms()
-        if utime.ticks_diff(current_time, last_heartbeat) >= HEARTBEAT_INTERVAL:
+        # Periodic health checks (non-critical - can fail without affecting power management)
+        try:
+            current_time = utime.ticks_ms()
+            if utime.ticks_diff(current_time, last_heartbeat) >= HEARTBEAT_INTERVAL:
 
-            # Check UART handler health
-            uart_health = uart_handler.check_health()
-            if uart_health["status"] != "HEALTHY":
-                health_msg = "UART health: {} - {}".format(
-                    uart_health["status"], uart_health["issues"]
-                )
-                debug.log_error(debug.CAT_SYSTEM, health_msg)
+                # Only do UART-related health checks and heartbeat when CM5 is powered
+                if power_state["cm5_powered"]:
+                    # Check UART handler health
+                    uart_health = uart_handler.check_health()
+                    if uart_health["status"] != "HEALTHY":
+                        health_msg = "UART health: {} - {}".format(
+                            uart_health["status"], uart_health["issues"]
+                        )
+                        debug.log_error(debug.CAT_SYSTEM, health_msg)
 
-            # Send heartbeat debug code to kernel
-            debug.send_debug_code(uart0, 0, 0x01, 0)  # System category, heartbeat code
+                    # Send heartbeat debug code to kernel
+                    debug.send_debug_code(uart0, 0, 0x01, 0)  # System category, heartbeat code
 
-            debug.log_info(debug.CAT_SYSTEM, "System heartbeat")
-            last_heartbeat = current_time
+                    debug.log_info(debug.CAT_SYSTEM, "System heartbeat (CM5 powered)")
+                else:
+                    # CM5 is off - just log local heartbeat without UART communication
+                    debug.log_info(debug.CAT_SYSTEM, "System heartbeat (CM5 off - no UART)")
 
-        # Power management triggers
-        check_power_on_trigger()
-        check_force_shutdown_trigger()
-        handle_power_timers()
+                last_heartbeat = current_time
+
+        except Exception as e:
+            # Heartbeat failed, but don't let it affect power management
+            debug.log_error(debug.CAT_SYSTEM, f"Heartbeat error (non-critical): {e}")
+            # Reset heartbeat timer to prevent continuous errors
+            last_heartbeat = utime.ticks_ms()
+
+        # Critical power management triggers (must always run)
+        try:
+            check_power_on_trigger()
+            check_force_shutdown_trigger()
+            handle_power_timers()
+        except Exception as e:
+            # Power management error is serious - log but continue trying
+            debug.log_error(debug.CAT_POWER, f"Power State (power on and off) error: {e}")
+            set_debug_color("ERROR")
 
         # Sleep to allow other tasks to run
         utime.sleep_ms(100)
 
     except Exception as e:
-        debug.log_error(debug.CAT_SYSTEM, f"Main loop error: {e}")
+        # Outer catch-all for catastrophic errors
+        debug.log_error(debug.CAT_SYSTEM, f"Main loop catastrophic error: {e}")
         set_debug_color("ERROR")
-        utime.sleep_ms(1000)  # Longer delay on error
+        utime.sleep_ms(1000)  # Longer delay only on catastrophic error
