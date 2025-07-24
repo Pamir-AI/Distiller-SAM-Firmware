@@ -1,5 +1,7 @@
 """Power Management Controller for Pamir SAM with BQ27441 integration"""
 
+# 7-23 fixed
+
 # pylint: disable=import-error,broad-exception-caught,global-statement,invalid-name
 import _thread
 import machine
@@ -105,6 +107,12 @@ class PowerManager:
             if self.debug_enabled:
                 print(f"[PowerManager] Sensor failed, sending synthetic current: {current_ma} mA")
 
+        ### DEBUG ###
+        ### REMAP ###
+        ### current_ma = self.bq27441.remain_capacity() 
+        ### 2025 7 23: No remap right now
+        ### END   ###
+
         # Cache the value for backup
         self.cached_current_ma = current_ma
         return current_ma
@@ -125,12 +133,12 @@ class PowerManager:
                 print(f"[PowerManager] Sending synthetic battery: {synthetic_battery}%")
             return synthetic_battery
 
-        # Read remaining capacity in mAh
-        remain_capacity_mah = self._read_sensor_safe(
-            lambda: self.bq27441.remain_capacity(), "Battery Capacity", 0
+        # Get state of charge from BQ27441
+        battery_percent = self._read_sensor_safe(
+            lambda: self.bq27441.i2c_get_stateofcharge(), "Battery State of Charge", 0
         )
 
-        if remain_capacity_mah == 0:
+        if battery_percent == 0:
             # Generate synthetic battery data if sensor read failed
             import utime
             time_sec = utime.time()
@@ -140,28 +148,9 @@ class PowerManager:
                 print(f"[PowerManager] Sensor failed, sending synthetic battery: {synthetic_battery}%")
             return synthetic_battery
 
-        # Convert to percentage based on design capacity
-        try:
-            battery_percent = int(
-                (remain_capacity_mah / self.design_capacity_mah) * 100
-            )
-            battery_percent = max(0, min(100, battery_percent))  # Clamp to 0-100%
-
-            # Cache the value
-            self.cached_battery_percent = battery_percent
-            return battery_percent
-
-        except Exception as e:
-            if self.debug_enabled:
-                print(f"[PowerManager] Battery percentage calculation failed: {e}")
-            # Return synthetic data as fallback
-            import utime
-            time_sec = utime.time()
-            base_battery = 80 - int((time_sec % 3600) / 180)
-            synthetic_battery = max(60, min(90, base_battery))
-            if self.debug_enabled:
-                print(f"[PowerManager] Calculation failed, sending synthetic battery: {synthetic_battery}%")
-            return synthetic_battery
+        # Cache the value
+        self.cached_battery_percent = battery_percent
+        return battery_percent
 
     def get_temperature_0_1c(self):
         """Get temperature in 0.1°C resolution from BQ27441
@@ -195,7 +184,6 @@ class PowerManager:
         # Convert to 0.1°C resolution
         try:
             temp_0_1c = int(temp_celsius * 10)
-
             # Cache the value
             self.cached_temperature_0_1c = temp_0_1c
             return temp_0_1c

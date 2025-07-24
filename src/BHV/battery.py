@@ -1,11 +1,11 @@
 """Battery Management System for TI's BQ27441-G1A fuel gauge IC."""
 
+#7 21
+
 # pylint: disable=import-error,invalid-name
 import struct
 import time
 import machine
-
-
 class BQ27441:
     """BQ27441 Battery Management System class for TI's BQ27441-G1A fuel gauge IC."""
 
@@ -54,11 +54,12 @@ class BQ27441:
         self._wr(0x61, b"\x00")  # BlockDataControl = 0
         self._wr(0x3E, bytes([subclass_id]))  # DataClass
         self._wr(0x3F, bytes([offset // 32]))  # Block offset 0-7
+        time.sleep_ms(10) #This delay is needed for the BQ27441 to process the command
 
         # 2 read current 32-byte buffer
         buf = bytearray(self._rd(0x40, 32))
         # 3 modify
-        buf[offset % 32 : offset % 32 + len(payload)] = payload
+        buf[offset % 32: offset % 32 + len(payload)] = payload
         # 4 write back whole buffer (only touched bytes actually needed)
         self._wr(0x40, buf)
 
@@ -87,10 +88,10 @@ class BQ27441:
         if CALIBRATION:
             # 1 Design Capacity & Terminate Voltage (State 0x52, block 0)
             self._extended_block_write(
-                0x52, 0x0A, struct.pack("<H", design_capacity_mAh)
+                0x52, 0x0A, struct.pack(">H", design_capacity_mAh)
             )
             self._extended_block_write(
-                0x52, 0x10, struct.pack("<H", terminate_voltage_mV)
+                0x52, 0x10, struct.pack(">H", terminate_voltage_mV)
             )
 
             # 2 clear OpConfig BIE (Registers 0x40, byte 0x40)
@@ -111,7 +112,7 @@ class BQ27441:
 
     def remain_capacity(self):
         """Get the remaining capacity in mAh."""
-        return self._rd_word(0x1C)
+        return self._rd_word(0x0C)
 
     def voltage_V(self):
         """Get the battery voltage in volts."""
@@ -126,12 +127,39 @@ class BQ27441:
         raw = self._rd_word(0x10)
         return raw - 0x10000 if raw & 0x8000 else raw
 
-    # Add additional methods here for other registers you need to interface with
+    def i2c_get_Control(self):
+        """Get the control register value."""
+        return self._rd_word(0x00)
+    
+    def i2c_get_flags(self):
+        """Get the flags register value."""
+        return self._rd_word(0x06)
+    
+    def i2c_get_stateofcharge(self):
+        """Get the state of charge register value in %."""
+        return self._rd_word(0x1C)
 
+    def i2c_get_NominalAvailableCapacity(self):
+        """Get the nominal available capacity register value in mAh."""
+        return self._rd_word(0x08)
 
-# Usage example
-# bms = BatteryManagementSystem()
-# bms.get_control()
-# bms.get_temperature()
-# bms.get_voltage()
-# bms.get_remaining_capacity()
+    def i2c_get_FullAvailableCapacity(self):
+        """Get the full available capacity register value in mAh."""
+        return self._rd_word(0x0A)
+    
+    def i2c_get_FullChargeCapacity(self):
+        """Get the full charge capacity register value in mAh."""
+        return self._rd_word(0x0E)
+
+    def i2c_get_StandbyCurrent(self):
+        """Get the standby current register value in mA."""
+        return self._rd_word(0x12)
+    
+    def i2c_get_StateOfHealth(self):
+        """Get the state of health register value."""
+        return self._rd_word(0x20)
+    
+    def i2c_get_DesignCapacity(self):
+        """Get the design capacity register value in mAh."""
+        return self._rd_word(0x3c)
+
