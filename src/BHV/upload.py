@@ -254,26 +254,47 @@ def flash_uf2_file(uf2_filename, description):
         dest_path = os.path.join(VOLUME_PATH, uf2_filename)
 
         # Method 1: Try standard copy
+        copy_success = False
         try:
             shutil.copy2(uf2_path, dest_path)
             os.chmod(dest_path, 0o644)
-        except (PermissionError, OSError):
+            copy_success = True
+        except (PermissionError, OSError) as e:
+            # Check if error is "Device not configured" - this means copy succeeded but device unmounted
+            if "Device not configured" in str(e) or "fcopyfile failed" in str(e):
+                print(f"{description} copy initiated successfully (device auto-unmounted)")
+                return True
+            
             # Method 2: Try using subprocess cp command
             print("Trying cp command...")
             result = subprocess.run(
                 ["cp", uf2_path, dest_path], capture_output=True, text=True
             )
-            if result.returncode != 0:
+            if result.returncode == 0:
+                copy_success = True
+            elif "Device not configured" in result.stderr or "fcopyfile failed" in result.stderr:
+                print(f"{description} copy initiated successfully (device auto-unmounted)")
+                return True
+            else:
                 raise PermissionError(f"Copy command failed: {result.stderr}")
 
-        # Verify the file was copied
-        if os.path.exists(dest_path):
+        # If we got here, check if copy succeeded
+        if copy_success:
             print(f"{description} copied successfully")
             return True
-        else:
-            raise FileNotFoundError("File copy appeared to succeed but file not found")
+        
+        # For UF2 files, the device may unmount before we can verify
+        # This is expected behavior - consider it successful
+        print(f"{description} copy likely succeeded (device auto-unmounted)")
+        return True
 
     except Exception as e:
+        # Check for the specific "Device not configured" error which indicates success
+        error_str = str(e)
+        if "Device not configured" in error_str or "fcopyfile failed" in error_str:
+            print(f"{description} copy initiated successfully (device auto-unmounted)")
+            return True
+            
         print(f"All copy methods failed: {e}")
         print("\nManual steps:")
         print(f"1. Open Finder and navigate to: {UF2_DIRECTORY}")
@@ -349,6 +370,90 @@ def find_uart_port():
     return ports[0]
 
 
+def check_mpy_files():
+    """Check if all required .mpy files exist in mpy/ directory"""
+    print("=" * 50)
+    print("CHECKING PRE-COMPILED MPY FILES")
+    print("=" * 50)
+    
+    script_dir = Path(__file__).parent
+    mpy_dir = script_dir / "mpy"
+    
+    if not mpy_dir.exists():
+        print(f"Error: mpy directory not found at {mpy_dir}")
+        return None
+    
+    required_files = []
+    missing_files = []
+    
+    for filename in PYTHON_FILES:
+        if filename.endswith(".py"):
+            # Special case for main.py
+            if filename == "main.py":
+                # Check for app.mpy instead of main.mpy
+                mpy_filename = "app.mpy"
+                mpy_path = mpy_dir / mpy_filename
+                loader_path = mpy_dir / "main.py.loader"
+                
+                if mpy_path.exists():
+                    required_files.append(f"mpy/{mpy_filename}")
+                    print(f"✓ Found: mpy/{mpy_filename} (compiled from {filename})")
+                else:
+                    missing_files.append(mpy_filename)
+                    print(f"✗ Missing: mpy/{mpy_filename} (should be compiled from {filename})")
+                
+                if loader_path.exists():
+                    required_files.append("mpy/main.py.loader")
+                    print(f"✓ Found: mpy/main.py.loader (bootstrap loader)")
+                else:
+                    missing_files.append("main.py.loader")
+                    print(f"✗ Missing: mpy/main.py.loader")
+            else:
+                # Regular .py files
+                mpy_filename = filename[:-3] + ".mpy"
+                mpy_path = mpy_dir / mpy_filename
+                
+                if mpy_path.exists():
+                    required_files.append(f"mpy/{mpy_filename}")
+                    print(f"✓ Found: mpy/{mpy_filename}")
+                else:
+                    missing_files.append(mpy_filename)
+                    print(f"✗ Missing: mpy/{mpy_filename}")
+        else:
+            # Non-Python files (like .bin files)
+            if filename.startswith("bin/"):
+                # Binary files stay in their original location
+                if (script_dir / filename).exists():
+                    required_files.append(filename)
+                    print(f"✓ Found: {filename} (binary file)")
+                else:
+                    missing_files.append(filename)
+                    print(f"✗ Missing: {filename}")
+            else:
+                # Check if file was copied to mpy directory
+                mpy_path = mpy_dir / filename
+                if mpy_path.exists():
+                    required_files.append(f"mpy/{filename}")
+                    print(f"✓ Found: mpy/{filename}")
+                elif (script_dir / filename).exists():
+                    # Fall back to original location
+                    required_files.append(filename)
+                    print(f"✓ Found: {filename}")
+                else:
+                    missing_files.append(filename)
+                    print(f"✗ Missing: {filename}")
+    
+    if missing_files:
+        print(f"\nError: {len(missing_files)} required files are missing:")
+        for f in missing_files:
+            print(f"  - {f}")
+        print("\nPlease run with --compile flag first to generate all .mpy files.")
+        return None
+    
+    print(f"\nAll {len(required_files)} required files found!")
+    return required_files
+
+
 def compile_python_files():
     """Compile Python files to .mpy bytecode using mpy-cross"""
     print("=" * 50)
@@ -356,6 +461,12 @@ def compile_python_files():
     print("=" * 50)
 
     script_dir = Path(__file__).parent
+    mpy_dir = script_dir / "mpy"
+    
+    # Create mpy directory if it doesn't exist
+    mpy_dir.mkdir(exist_ok=True)
+    print(f"Output directory: {mpy_dir}")
+    
     compiled_files = []
 
     for filename in PYTHON_FILES:
@@ -370,19 +481,48 @@ def compile_python_files():
             print(f"Compiling {filename}...")
 
             try:
-                # Run mpy-cross command
-                mpy_filename = filename[:-3] + ".mpy"  # Replace .py with .mpy
-                mpy_path = script_dir / mpy_filename
+                # Special handling for main.py
+                if filename == "main.py":
+                    # Compile main.py to app.mpy instead
+                    mpy_filename = "app.mpy"
+                    mpy_path = mpy_dir / mpy_filename
+                    
+                    cmd = ["mpy-cross", str(file_path), "-o", str(mpy_path)]
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode != 0:
+                        print(f"Error compiling {filename}: {result.stderr}")
+                        return None
+                    
+                    print(f"  -> mpy/{mpy_filename} (renamed from main.mpy)")
+                    compiled_files.append(f"mpy/{mpy_filename}")
+                    
+                    # Create a minimal main.py that imports app
+                    loader_content = """# Auto-generated loader for compiled bytecode
+import app
+"""
+                    loader_path = mpy_dir / "main.py.loader"
+                    with open(loader_path, 'w') as f:
+                        f.write(loader_content)
+                    
+                    # Add the loader file (will be renamed to main.py during upload)
+                    compiled_files.append("mpy/main.py.loader")
+                    print("  -> mpy/main.py.loader (bootstrap loader)")
+                    
+                else:
+                    # Regular compilation for other files
+                    mpy_filename = filename[:-3] + ".mpy"  # Replace .py with .mpy
+                    mpy_path = mpy_dir / mpy_filename
 
-                cmd = ["mpy-cross", str(file_path), "-o", str(mpy_path)]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    cmd = ["mpy-cross", str(file_path), "-o", str(mpy_path)]
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
-                if result.returncode != 0:
-                    print(f"Error compiling {filename}: {result.stderr}")
-                    return None
+                    if result.returncode != 0:
+                        print(f"Error compiling {filename}: {result.stderr}")
+                        return None
 
-                print(f"  -> {mpy_filename}")
-                compiled_files.append(mpy_filename)
+                    print(f"  -> mpy/{mpy_filename}")
+                    compiled_files.append(f"mpy/{mpy_filename}")
 
             except subprocess.TimeoutExpired:
                 print(f"Timeout compiling {filename}")
@@ -391,12 +531,25 @@ def compile_python_files():
                 print(f"Error compiling {filename}: {e}")
                 return None
         else:
-            # Non-Python files (like .bin) - keep as-is
-            compiled_files.append(filename)
+            # Non-Python files (like .bin) - copy to mpy directory
+            if filename.startswith("bin/"):
+                # Already in bin directory, just reference it
+                compiled_files.append(filename)
+            else:
+                # Copy other non-Python files to mpy directory
+                try:
+                    dest_path = mpy_dir / filename
+                    shutil.copy2(file_path, dest_path)
+                    compiled_files.append(f"mpy/{filename}")
+                    print(f"  -> mpy/{filename} (copied)")
+                except Exception as e:
+                    print(f"Error copying {filename}: {e}")
+                    compiled_files.append(filename)  # Fall back to original
 
     print(
         f"\nCompilation completed! {len([f for f in compiled_files if f.endswith('.mpy')])} files compiled."
     )
+    print(f"Compiled files saved in: {mpy_dir}")
     return compiled_files
 
 
@@ -426,17 +579,35 @@ def upload_python_files(file_list=None):
     # Upload each file
     total_files = len(file_list)
     for i, filename in enumerate(file_list):
-        file_path = script_dir / filename
+        # Handle mpy directory paths
+        if filename.startswith("mpy/"):
+            file_path = script_dir / filename
+            base_filename = filename[4:]  # Remove "mpy/" prefix
+        else:
+            file_path = script_dir / filename
+            base_filename = filename
+        
+        # Special handling for main.py.loader
+        if filename.endswith("main.py.loader"):
+            # Upload as main.py
+            target_name = "main.py"
+            print(f"Uploading {filename} as {target_name} ({i+1}/{total_files})")
+        else:
+            # Remove any directory prefix (like bin/) for device upload
+            # All files go to root directory on device
+            if "/" in base_filename:
+                target_name = os.path.basename(base_filename)
+            else:
+                target_name = base_filename
+            print(f"Uploading {filename} -> {target_name} ({i+1}/{total_files})")
 
         if not file_path.exists():
             print(f"Warning: {filename} not found, skipping...")
             continue
 
-        print(f"Uploading {filename} ({i+1}/{total_files})")
-
         try:
-            # Run ampy command
-            cmd = ["ampy", "--port", port, "put", str(file_path)]
+            # Run ampy command - all files go to root directory
+            cmd = ["ampy", "--port", port, "put", str(file_path), target_name]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
 
             if result.returncode != 0:
@@ -479,6 +650,11 @@ def main():
         action="store_true",
         help="Compile Python files to bytecode (.mpy) before upload",
     )
+    parser.add_argument(
+        "--mpy",
+        action="store_true",
+        help="Upload pre-compiled .mpy files from mpy/ directory (no compilation)",
+    )
 
     args = parser.parse_args()
 
@@ -487,8 +663,16 @@ def main():
     print("Warning: Exiting while flashing could damage the RP2040")
     print()
 
+    # Validate arguments - can't use both --compile and --mpy
+    if args.compile and args.mpy:
+        print("Error: Cannot use both --compile and --mpy flags together")
+        print("  --compile: Compiles .py files to .mpy and uploads them")
+        print("  --mpy: Uploads pre-compiled .mpy files from mpy/ directory")
+        sys.exit(1)
+
     # Check dependencies
-    if not check_dependencies(compile_mode=args.compile):
+    compile_mode = args.compile or args.mpy  # mpy mode still needs ampy
+    if not check_dependencies(compile_mode=compile_mode):
         sys.exit(1)
 
     # Check if UF2 directory exists
@@ -515,6 +699,20 @@ def main():
                 sys.exit(1)
             # Upload compiled files
             success = upload_python_files(compiled_files)
+            
+            if success:
+                print("\nCompiled files retained in mpy/ directory for future use.")
+        elif args.mpy:
+            # Check for pre-compiled .mpy files
+            mpy_files = check_mpy_files()
+            if mpy_files is None:
+                print("\nCannot proceed with --mpy mode due to missing files.")
+                sys.exit(1)
+            # Upload pre-compiled files
+            success = upload_python_files(mpy_files)
+            
+            if success:
+                print("\nPre-compiled .mpy files uploaded successfully!")
         else:
             # Upload source Python files
             success = upload_python_files()

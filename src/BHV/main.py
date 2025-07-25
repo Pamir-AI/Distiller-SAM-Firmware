@@ -103,7 +103,7 @@ DEBUG_COLORS = {
 }
 
 # CM5 Firmware Upload Mode
-if upBTN.value():
+if upBTN.value() and not selectBTN.value() and not downBTN.value():
     wdt.feed()
     # Switch USB to SOM_USB
     switch_usb("SOM_USB")
@@ -154,7 +154,7 @@ debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.4 Starting ===")
 
 
 # SAM UART MODE
-if downBTN.value():
+if downBTN.value() and not selectBTN.value() and not upBTN.value():
     wdt.feed()
     # Switch USB to SAM_USB
     switch_usb("SAM_USB")
