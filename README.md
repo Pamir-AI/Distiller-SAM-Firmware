@@ -119,17 +119,62 @@ The system has configurable parameters in the main scripts:
 - Watchdog timeout settings
 - Button debounce timing
 
+## BHV (RP2040 SAM) Firmware Features
+
+The BHV firmware provides comprehensive hardware control and system management capabilities:
+
+### Power Management
+- **Smart Power Control**: Long press (3s) SELECT button to power on CM5, with graceful shutdown support
+- **Battery Monitoring**: Real-time monitoring of battery percentage, voltage, current, and temperature via BQ27441 IC
+- **Low Battery Protection**: Automatic display of battery warnings on e-ink when CM5 is off
+- **Emergency Shutdown**: Automatic power-off at 1% battery (when not charging)
+- **Force Shutdown**: UP+DOWN buttons (5s) for forced power cycling
+
+### Display System
+- **E-ink Control**: 240x416 pixel display with both LUT and fast refresh modes
+- **Smart Display Management**: Automatic handoff between RP2040 and CM5
+- **Boot Animations**: Loading screens during CM5 startup
+- **Battery Status Display**: Low/dead battery warnings when powered off
+
+### Communication Protocol
+- **Pamir UART Protocol v0.2.0**: Reliable 115200 baud communication with CRC8 validation
+- **Message Types**: Button events, LED control, power management, display control, debug info
+- **Multi-Core Architecture**: Dedicated UART handling on Core 1 for reliable communication
+
+### User Interface
+- **Three Buttons**: SELECT, UP, DOWN with hardware debouncing
+- **Special Modes**: 
+  - UP button at boot: CM5 firmware update mode
+  - DOWN button at boot: SAM debug mode
+- **LED Feedback**: 7 NeoPixel RGB LEDs with animations (static, blink, fade, rainbow)
+
+### System Monitoring
+- **Debug System**: Multi-level logging with category filtering
+- **Performance Tracking**: UART statistics, task performance metrics
+- **Health Monitoring**: Watchdog timer (2s), system heartbeat (10s)
+- **Status LED**: RGB debug LED showing system state
+
+### Hardware Control
+- **USB Switching**: Dynamic routing between SAM and SOM USB
+- **GPIO Management**: Button inputs, power controls, display multiplexer
+- **Temperature Monitoring**: Via battery management IC
+- **Interrupt System**: Hardware interrupts for buttons and critical events
+
 ## Files Structure
 
-- `main.py` - Primary firmware for the RP2040
-- `eink_driver_sam.py` - E-ink display driver
-- `battery.py` - Battery management system interface
-- `cm4/` - SAM module firmware
-- `ULP/` - MicroPython firmware files
-- `Fan/` - Fan control components
-- `tools/` - Development and debugging utilities
+- `src/BHV/` - BHV (RP2040 SAM) firmware
+  - `main.py` - Primary firmware for the RP2040
+  - `eink_driver_sam.py` - E-ink display driver
+  - `battery.py` - Battery management system interface
+  - `power_manager.py` - Power state and battery management
+  - `bin/` - Binary image files for e-ink display
+  - `asset/` - Source PNG images for display
+- `src/CM5/` - Raspberry Pi CM5 module firmware
+- `Tools/` - Development utilities
+  - `battery_remote_monitoring_tool/` - Real-time battery monitoring dashboard
+  - `image_processor/` - E-ink image conversion tools
+- `UF2/` - MicroPython firmware files
 - `scriptloarder.sh` - Script to automate firmware deployment
-- `Bin/` - Binary files for the e-ink display
 
 ## License
 
