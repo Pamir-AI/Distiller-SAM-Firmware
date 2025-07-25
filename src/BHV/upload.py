@@ -22,6 +22,8 @@ UART_PORT_PATTERN = "/dev/tty.usb*"
 PYTHON_FILES = [
     "bin/loading1.bin",
     "bin/loading2.bin",
+    "bin/battery-low.bin",
+    "bin/battery-dead.bin",
     "eink_driver_sam.py",
     "pamir_uart_protocols.py",
     "neopixel_controller.py",

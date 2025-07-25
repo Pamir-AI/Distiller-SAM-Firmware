@@ -31,6 +31,14 @@ DEBUG_LED_PIN = 20
 LED_BAR_PIN = 6
 BUTTON_DEBOUNCE_MS = 50
 
+# Timing constants
+SELECT_LONG_PRESS_MS = 3000  # 3 seconds for power on
+FORCE_SHUTDOWN_PRESS_MS = 5000  # 5 seconds for force shutdown
+NORMAL_SHUTDOWN_DELAY_MS = 2000  # 2 seconds delay for normal shutdown
+FORCE_SHUTDOWN_DELAY_MS = 3000  # 3 seconds delay for force shutdown
+BATTERY_CHECK_INTERVAL = 10000  # 10 seconds between battery display checks
+EMERGENCY_SHUTDOWN_INTERVAL = 5000  # 5 seconds between emergency shutdown attempts
+
 # Initialize global components
 debug = init_debug_handler(
     INITIAL_DEBUG_LEVEL,  # level
@@ -53,14 +61,16 @@ sam_interrupt = machine.Pin(2, machine.Pin.OUT)
 usb_switch_s = machine.Pin(23, machine.Pin.OUT, value=0)
 # Debug RGB LED
 debug_rgb = neopixel.NeoPixel(machine.Pin(DEBUG_LED_PIN), 1)
-
+cm5_power_btn = machine.Pin(4, machine.Pin.OPEN_DRAIN, value=1)
 
 def set_debug_color(color_name):
     """Set debug RGB color with error handling"""
+    scale_down_factor = 2
     try:
         if color_name in DEBUG_COLORS:
             color = DEBUG_COLORS[color_name]
-            debug_rgb[0] = color
+            # Scale down color values by 1/3 
+            debug_rgb[0] = (color[0] // scale_down_factor, color[1] // scale_down_factor, color[2] // scale_down_factor)
             debug_rgb.write()
     except Exception as e:
         debug.log_error(
@@ -89,6 +99,7 @@ DEBUG_COLORS = {
     "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
     "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
     "DEBUG_MODE": (255, 255, 0),  # Yellow - Debug mode
+    "CHARGING": (255, 0, 0),  # Red - Charging
 }
 
 # CM5 Firmware Upload Mode
@@ -100,6 +111,8 @@ if upBTN.value():
     while True:
         wdt.feed()
         utime.sleep_ms(1000) 
+        
+
 
 def set_cm5_power(enable):
     """Control CM5 power via pmic_enable pin (OPEN_DRAIN mode)
@@ -139,8 +152,16 @@ def set_cm5_power(enable):
 set_debug_color("INIT")
 debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.4 Starting ===")
 
-# USB switch setup
-switch_usb("SOM_USB")
+
+# SAM UART MODE
+if downBTN.value():
+    wdt.feed()
+    # Switch USB to SAM_USB
+    switch_usb("SAM_USB")
+    set_debug_color("DEBUG_MODE")
+else:    
+    # USB switch setup
+    switch_usb("SOM_USB")
 
 # Initialize protocol handler
 protocol = PamirUartProtocols()
@@ -165,10 +186,176 @@ power_manager = PowerManager(design_capacity_mah=3000, debug_enabled=not PRODUCT
 debug.log_info(debug.CAT_POWER, "Power manager initialized")
 
 
+# Battery display management
+def get_battery_display_requirement():
+    """Check battery level and return required display action
+    
+    Returns:
+        dict: {
+            "action": "none" | "low_battery" | "dead_battery",
+            "image_path": path to image file or None,
+            "battery_percent": current battery percentage or None,
+            "current_ma": current draw in mA,
+            "is_charging": whether battery is charging
+        }
+    """
+    try:
+        # Don't display anything if no battery is connected
+        if power_manager.bq27441 is None:
+            debug.log_verbose(debug.CAT_POWER, "No battery connected - no display needed")
+            return {
+                "action": "none", 
+                "image_path": None, 
+                "battery_percent": None,
+                "current_ma": None,
+                "is_charging": False
+            }
+        
+        # Get current battery metrics
+        battery_percent = power_manager.get_battery_percent()
+        current_ma = power_manager.get_current_ma()
+        is_charging = current_ma > 0  # Positive current means charging
+        
+        # Determine required action based on battery level
+        if battery_percent <= 2:
+            # Dead battery - only show if not charging
+            if is_charging:
+                debug.log_verbose(
+                    debug.CAT_POWER, 
+                    f"Battery dead ({battery_percent}%) but charging ({current_ma}mA) - no warning needed"
+                )
+                return {
+                    "action": "none", 
+                    "image_path": None, 
+                    "battery_percent": battery_percent,
+                    "current_ma": current_ma,
+                    "is_charging": is_charging
+                }
+            else:
+                return {
+                    "action": "dead_battery",
+                    "image_path": "./battery-dead.bin",
+                    "battery_percent": battery_percent,
+                    "current_ma": current_ma,
+                    "is_charging": is_charging
+                }
+        elif battery_percent <= 5:
+            # Low battery - only show if not charging
+            if is_charging:
+                debug.log_verbose(
+                    debug.CAT_POWER, 
+                    f"Battery low ({battery_percent}%) but charging ({current_ma}mA) - no warning needed"
+                )
+                return {
+                    "action": "none", 
+                    "image_path": None, 
+                    "battery_percent": battery_percent,
+                    "current_ma": current_ma,
+                    "is_charging": is_charging
+                }
+            else:
+                return {
+                    "action": "low_battery", 
+                    "image_path": "./battery-low.bin",
+                    "battery_percent": battery_percent,
+                    "current_ma": current_ma,
+                    "is_charging": is_charging
+                }
+        else:
+            return {
+                "action": "none", 
+                "image_path": None, 
+                "battery_percent": battery_percent,
+                "current_ma": current_ma,
+                "is_charging": is_charging
+            }
+            
+    except Exception as e:
+        debug.log_error(debug.CAT_POWER, f"Battery display check failed: {e}")
+        return {
+            "action": "none", 
+            "image_path": None, 
+            "battery_percent": None,
+            "current_ma": None,
+            "is_charging": False
+        }
+
+
+def check_and_display_battery_status():
+    """Check battery status and display appropriate image if needed (only when CM5 is off)"""
+    global power_state, last_battery_display_check, current_battery_display_action, current_eink_display_state
+    
+    # Only check when CM5 is powered off
+    if power_state["cm5_powered"]:
+        return
+    
+    # Throttle battery checks to avoid excessive power manager calls
+    current_time = utime.ticks_ms()
+    if utime.ticks_diff(current_time, last_battery_display_check) < BATTERY_CHECK_INTERVAL:
+        return
+    
+    last_battery_display_check = current_time
+    
+    try:
+        battery_requirement = get_battery_display_requirement()
+        
+        # Always print battery info when this function is called
+        if battery_requirement["battery_percent"] is not None:
+            voltage_mv = power_manager.get_voltage_mv()
+            temperature_0_1c = power_manager.get_temperature_0_1c()
+            charging_status = "charging" if battery_requirement["is_charging"] else "discharging"
+            
+            debug.log_info(debug.CAT_POWER, "[Battery Info] {}% | {}mV | {}mA ({}) | {:.1f}°C".format(
+                battery_requirement['battery_percent'], voltage_mv, battery_requirement['current_ma'], 
+                charging_status, temperature_0_1c/10))
+        else:
+            debug.log_info(debug.CAT_POWER, "[Battery Info] No battery connected")
+        
+        # Determine what should be displayed based on battery requirement
+        required_eink_state = "none"
+        if battery_requirement["action"] == "dead_battery":
+            required_eink_state = "battery_dead"
+        elif battery_requirement["action"] == "low_battery":
+            required_eink_state = "battery_low"
+        
+        # Only display if required state is different from current eink state
+        if required_eink_state != "none" and required_eink_state != current_eink_display_state:
+            debug.log_info(
+                debug.CAT_POWER, 
+                "Battery {}% - displaying {} image (current: {})".format(
+                    battery_requirement['battery_percent'], 
+                    battery_requirement['action'],
+                    current_eink_display_state
+                )
+            )
+            
+            # Call eink display task directly (blocking)
+            try:
+                eink_display_task([battery_requirement["image_path"]])
+                
+                # Update eink display state after successful display
+                current_eink_display_state = required_eink_state
+                current_battery_display_action = battery_requirement["action"]
+                
+                debug.log_info(debug.CAT_POWER, "Eink display state updated to: {}".format(current_eink_display_state))
+                
+            except Exception as e:
+                debug.log_error(debug.CAT_POWER, f"Battery image display failed: {e}")
+        else:
+            # Log why we're not displaying
+            if required_eink_state == "none":
+                debug.log_verbose(debug.CAT_POWER, "No battery warning needed")
+            else:
+                debug.log_verbose(debug.CAT_POWER, "Battery warning already displayed (current: {})".format(current_eink_display_state))
+        
+    except Exception as e:
+        debug.log_error(debug.CAT_POWER, f"Battery status check failed: {e}")
+
+
 # Power control functions (must be defined before first use)
 def reset_system_state():
     """Reset system state when CM5 is powered off"""
-    global display_release_received, einkRunning, power_state
+    global display_release_received, einkRunning, power_state, current_battery_display_action, current_eink_display_state
     
     # Reset display state
     display_release_received = False
@@ -186,7 +373,13 @@ def reset_system_state():
     power_state["force_shutdown_pending"] = False
     power_state["force_shutdown_timer"] = 0
     
-    debug.log_info(debug.CAT_SYSTEM, "System state reset for CM5 power off")
+    # Reset battery display state to allow new battery displays when CM5 is off
+    current_battery_display_action = "none"
+    
+    # Reset eink display state since CM5 can control eink and we don't know what it displayed
+    current_eink_display_state = "unknown"
+    
+    debug.log_info(debug.CAT_SYSTEM, "System state reset for CM5 power off - eink state now unknown")
 
 
 def check_power_on_trigger():
@@ -210,13 +403,54 @@ def check_power_on_trigger():
             # Check if long press duration reached
             press_duration = utime.ticks_diff(current_time, power_state["select_press_start"])
             if press_duration >= SELECT_LONG_PRESS_MS:
-                # Power on CM5
-                debug.log_info(debug.CAT_POWER, f"SELECT long press ({press_duration}ms) - powering on CM5")
-                set_cm5_power(True)
-                power_state["select_press_start"] = 0  # Reset
-                
-                # Start eink task after power on
-                eink_display_task()
+                # Check battery level before allowing power on
+                battery_requirement = get_battery_display_requirement()
+                if (battery_requirement["battery_percent"] is not None and 
+                    battery_requirement["battery_percent"] <= 2 and 
+                    not battery_requirement["is_charging"]):
+                    # Battery too low and not charging - prevent power on and show dead battery image
+                    debug.log_info(
+                        debug.CAT_POWER, 
+                        "Power on blocked - battery too low ({}%) and not charging".format(
+                            battery_requirement['battery_percent']
+                        )
+                    )
+                    power_state["select_press_start"] = 0  # Reset
+                    
+                    # Display dead battery image to indicate why power on failed (blocking call)
+                    try:
+                        eink_display_task(["./battery-dead.bin"])
+                        # Update eink display state since we displayed dead battery
+                        global current_eink_display_state
+                        current_eink_display_state = "battery_dead"
+                        debug.log_info(debug.CAT_POWER, "Eink display state updated to: battery_dead (power-on blocked)")
+                    except Exception as e:
+                        debug.log_error(debug.CAT_POWER, f"Low battery warning display failed: {e}")
+                elif (battery_requirement["battery_percent"] is not None and 
+                      battery_requirement["battery_percent"] <= 2 and 
+                      battery_requirement["is_charging"]):
+                    # Battery low but charging - allow power on
+                    debug.log_info(
+                        debug.CAT_POWER, 
+                        "Battery low ({}%) but charging ({}mA) - allowing power on".format(
+                            battery_requirement['battery_percent'],
+                            battery_requirement['current_ma']
+                        )
+                    )
+                    debug.log_info(debug.CAT_POWER, f"SELECT long press ({press_duration}ms) - powering on CM5")
+                    set_cm5_power(True)
+                    power_state["select_press_start"] = 0  # Reset
+                    
+                    # Start eink task after power on
+                    eink_boot_screen_task()
+                else:
+                    # Battery OK or no battery sensor - allow power on
+                    debug.log_info(debug.CAT_POWER, f"SELECT long press ({press_duration}ms) - powering on CM5")
+                    set_cm5_power(True)
+                    power_state["select_press_start"] = 0  # Reset
+                    
+                    # Start eink task after power on
+                    eink_boot_screen_task()
     else:
         # SELECT button released - reset timer
         if power_state["select_press_start"] != 0:
@@ -298,6 +532,77 @@ def handle_power_timers():
             
 
 
+def check_emergency_battery_shutdown():
+    """Check for emergency battery shutdown condition and signal CM5 if needed"""
+    global last_emergency_shutdown_check, power_state
+    
+    # Only check when CM5 is powered on
+    if not power_state["cm5_powered"]:
+        return
+    
+    # Throttle emergency shutdown checks to prevent excessive triggers
+    current_time = utime.ticks_ms()
+    if utime.ticks_diff(current_time, last_emergency_shutdown_check) < EMERGENCY_SHUTDOWN_INTERVAL:
+        return
+    
+    try:
+        # Check if no battery is connected
+        if power_manager.bq27441 is None:
+            debug.log_verbose(debug.CAT_POWER, "No battery connected - no emergency shutdown needed")
+            return
+        
+        # Get current battery metrics
+        battery_percent = power_manager.get_battery_percent()
+        current_ma = power_manager.get_current_ma()
+        is_charging = current_ma > 0  # Positive current means charging
+        
+        # Check emergency shutdown conditions:
+        # 1. CM5 is powered on (already checked above)
+        # 2. Battery is not charging
+        # 3. Battery percentage is exactly 1
+        if not is_charging and battery_percent == 1:
+            debug.log_info(
+                debug.CAT_POWER, 
+                f"EMERGENCY: Battery at {battery_percent}% and not charging ({current_ma}mA) - signaling CM5 shutdown"
+            )
+            
+            # Signal CM5 by pulsing cm5_power_btn (blocking operation)
+            # Set to 0 (active/low) for 100ms, then back to 1 (high-z)
+            cm5_power_btn.value(0)  # Pull low (active)
+            debug.log_info(debug.CAT_POWER, "Emergency shutdown signal sent (cm5_power_btn -> low)")
+            
+            # Blocking delay for 100ms
+            utime.sleep_ms(100)
+            
+            cm5_power_btn.value(1)  # Back to high-z (inactive)
+            debug.log_info(debug.CAT_POWER, "Emergency shutdown signal released (cm5_power_btn -> high-z)")
+            
+            # Clear any pending shutdown states before emergency power off
+            power_state["shutdown_pending"] = False
+            power_state["shutdown_timer"] = 0
+            power_state["force_shutdown_pending"] = False
+            power_state["force_shutdown_timer"] = 0
+            
+            # Wait for 2 seconds to change the power state
+            utime.sleep_ms(2000)
+            set_cm5_power(False)
+            debug.log_info(debug.CAT_POWER, "Emergency shutdown complete - CM5 powered off")
+            
+            # Update timestamp to prevent repeated triggers
+            last_emergency_shutdown_check = current_time
+            
+        else:
+            # Log why emergency shutdown was not triggered (only when conditions are close)
+            if battery_percent <= 5:  # Only log when battery is getting low
+                debug.log_verbose(
+                    debug.CAT_POWER,
+                    f"Emergency shutdown check: battery {battery_percent}%, charging={is_charging} ({current_ma}mA) - no action needed"
+                )
+        
+    except Exception as e:
+        debug.log_error(debug.CAT_POWER, f"Emergency battery shutdown check failed: {e}")
+
+
 # LED completion callback
 def led_completion_callback(led_id, sequence_length):
     """Callback for LED animation completion"""
@@ -343,10 +648,6 @@ einkStatus.high()  # SOM CONTROL E-INK
 
 debug.log_info(debug.CAT_SYSTEM, "Hardware initialization complete")
 
-# Initial power control - turn off CM5 at startup (after all components initialized)
-debug.log_info(debug.CAT_POWER, "Setting initial CM5 power state to OFF")
-set_cm5_power(False)
-
 # Global state
 button_state_cache = {"up": False, "down": False, "select": False, "power": False}
 display_release_received = False  # Flag to track display release signal
@@ -362,11 +663,19 @@ power_state = {
     "force_press_start": 0,  # Time when UP+DOWN was first pressed
 }
 
-# Timing constants
-SELECT_LONG_PRESS_MS = 3000  # 3 seconds for power on
-FORCE_SHUTDOWN_PRESS_MS = 5000  # 5 seconds for force shutdown
-NORMAL_SHUTDOWN_DELAY_MS = 2000  # 2 seconds delay for normal shutdown
-FORCE_SHUTDOWN_DELAY_MS = 3000  # 3 seconds delay for force shutdown
+# Battery display state
+last_battery_display_check = 0  # Last time battery was checked for display
+current_battery_display_action = "none"  # Current battery display action to prevent repeats
+current_eink_display_state = "unknown"  # What's currently displayed on eink: "unknown", "battery_low", "battery_dead", "other"
+
+# Emergency battery shutdown state
+last_emergency_shutdown_check = 0  # Last time emergency shutdown was triggered
+
+# Initial power control - turn off CM5 at startup (after all components initialized)
+debug.log_info(debug.CAT_POWER, "Setting initial CM5 power state to OFF")
+set_cm5_power(False)
+
+
 
 # E-ink state variables (needed for proper eink control)
 import _thread
@@ -596,7 +905,7 @@ def process_display_packet(packet_data):
             if power_state["cm5_powered"]:
                 debug.log_info(debug.CAT_DISPLAY, "Display release signal received - CM5 has booted")
             else:
-                debug.log_warning(debug.CAT_DISPLAY, "Display release received but CM5 not powered - ignoring")
+                debug.log_info(debug.CAT_DISPLAY, "Display release received but CM5 not powered - ignoring")
                 return
             
             # Send acknowledgment
@@ -797,8 +1106,8 @@ task_manager.submit_uart_task("UART_COMMUNICATION", uart_communication_task)
 
 
 # E-ink display task (high priority, blocking)
-def eink_display_task():
-    """E-ink display animation task - runs with high priority until Pi boots"""
+def eink_boot_screen_task():
+    """E-ink boot screen animation task - runs with high priority until Pi boots"""
     global display_release_received, einkRunning, power_state
     
     try:
@@ -829,7 +1138,10 @@ def eink_display_task():
             eink.epd_init_lut()
         else:
             eink.epd_init_fast()
-            
+        
+        # Feed watchdog before displaying images
+        wdt.feed()
+        
         try:
             eink.PIC_display(None, './loading1.bin')
             debug.log_info(debug.CAT_DISPLAY, "Initial loading screen displayed")
@@ -837,10 +1149,13 @@ def eink_display_task():
             debug.log_error(debug.CAT_DISPLAY, "Loading files not found")
             einkRunning = False
         
+        wdt.feed()
+               
         if LUT_MODE:
             utime.sleep_ms(1300)  # give time for first refresh, no lower than 1300
             debug.log_info(debug.CAT_DISPLAY, "LUT mode - waiting for refresh completion")
       
+        wdt.feed()
         # Animation loop with additional power state checks
         repeat = 0
         while einkRunning and not display_release_received and power_state["cm5_powered"]:
@@ -898,6 +1213,142 @@ def eink_display_task():
         else:
             debug.log_info(debug.CAT_DISPLAY, "Animation completed - releasing eink control")
             
+        debug.log_info(debug.CAT_DISPLAY, "E-ink boot screen task completed")
+        
+        # Update eink display state to "unknown" since CM5 will take control
+        global current_eink_display_state
+        current_eink_display_state = "unknown"
+
+    except Exception as e:
+        set_debug_color("ERROR")
+        debug.log_error(debug.CAT_DISPLAY, f"E-ink task failed: {e}")
+        # Ensure eink is released even on error
+        try:
+            eink.de_init()
+            with eink_lock:
+                einkRunning = False
+            einkMux.low()
+        except:
+            pass
+
+
+def eink_display_task(image_paths):
+    """E-ink display animation task with custom images - runs when CM5 is powered off"""
+    global display_release_received, einkRunning, power_state
+    
+    try:
+        # Check if CM5 is powered off before starting (opposite of boot screen)
+        if power_state["cm5_powered"]:
+            debug.log_info(debug.CAT_DISPLAY, "E-ink task aborted - CM5 is powered (use boot screen instead)")
+            return
+            
+        # Validate image paths array
+        if not image_paths or len(image_paths) == 0:
+            debug.log_error(debug.CAT_DISPLAY, "E-ink task aborted - no image paths provided")
+            return
+            
+        debug.log_info(debug.CAT_DISPLAY, f"Starting E-ink display task with {len(image_paths)} images")
+
+        # Import and initialize E-ink 
+        from eink_driver_sam import einkDSP_SAM
+        
+        # Set debug color to EINK_RUNNING
+        set_debug_color("EINK_RUNNING")
+
+        einkStatus.high()  # Provide power to e-ink
+        einkMux.high()  # SAM control e-ink
+
+        eink = einkDSP_SAM()
+
+        # Use proper V0.2.1 eink initialization logic
+        einkRunning = True
+        if eink.init == False:
+            eink.re_init()
+        
+        wdt.feed()
+        
+        if LUT_MODE:
+            eink.epd_init_lut()
+        else:
+            eink.epd_init_fast()
+            
+        try:
+            # Show the first image in the array
+            eink.PIC_display(None, image_paths[0])
+            debug.log_info(debug.CAT_DISPLAY, f"Initial image displayed: {image_paths[0]}")
+        except OSError:
+            debug.log_error(debug.CAT_DISPLAY, f"Image file not found: {image_paths[0]}")
+            einkRunning = False
+        
+        wdt.feed()
+        
+        if LUT_MODE:
+            utime.sleep_ms(1300)  # give time for first refresh, no lower than 1300
+            debug.log_info(debug.CAT_DISPLAY, "LUT mode - waiting for refresh completion")
+      
+        wdt.feed()
+        
+        # Initialize animation variables
+        repeat = 0
+        
+        # Animation loop only if we have multiple images
+        if len(image_paths) == 1:
+            debug.log_info(debug.CAT_DISPLAY, "Single image mode - no animation loop")
+        else:
+            # Animation loop with cycling through all images
+            image_index = 0
+            while einkRunning and not power_state["cm5_powered"] and repeat < EINK_ANIMATION_TIMEOUT:
+                wdt.feed()
+                with eink_lock:
+                    if not einkRunning or repeat >= EINK_ANIMATION_TIMEOUT:
+                        break
+                
+                # Check for power on before each animation step
+                if power_state["cm5_powered"]:
+                    debug.log_info(debug.CAT_DISPLAY, "CM5 powered on during animation - stopping")
+                    break
+                    
+                try:
+                    # Calculate current and next image indices
+                    current_index = image_index % len(image_paths)
+                    next_index = (image_index + 1) % len(image_paths)
+                    
+                    eink.epd_init_part()
+                    eink.PIC_display(image_paths[current_index], image_paths[next_index])
+                    
+                    # Check during animation
+                    if power_state["cm5_powered"]:
+                        break
+                    
+                    wdt.feed()
+                    repeat += 1
+                    image_index += 1
+                    
+                    debug.log_verbose(debug.CAT_DISPLAY, f"Animation cycle {repeat} completed (image {current_index} -> {next_index})")
+                    
+                    # Yield and check for power state
+                    for i in range(5):  # Brief yield with checks
+                        if power_state["cm5_powered"]:
+                            break
+                        utime.sleep_ms(10)
+                        
+                except Exception as e:
+                    debug.log_error(debug.CAT_DISPLAY, f"Animation cycle error: {e}")
+                    break
+        
+        # Clean shutdown
+        eink.de_init()
+        with eink_lock:
+            einkRunning = False
+        einkMux.low()
+        
+        if power_state["cm5_powered"]:
+            debug.log_info(debug.CAT_DISPLAY, "CM5 powered on - releasing eink control")
+        elif repeat >= EINK_ANIMATION_TIMEOUT:
+            debug.log_info(debug.CAT_DISPLAY, f"Animation timeout reached ({EINK_ANIMATION_TIMEOUT} cycles) - releasing eink control")
+        else:
+            debug.log_info(debug.CAT_DISPLAY, "Animation completed - releasing eink control")
+            
         debug.log_info(debug.CAT_DISPLAY, "E-ink display task completed")
 
     except Exception as e:
@@ -913,8 +1364,9 @@ def eink_display_task():
             pass
 
 
-# Note: E-ink task will only run when CM5 is powered on via SELECT button long press
-# This prevents the boot animation from running when CM5 is off
+# Note: E-ink boot screen task will only run when CM5 is powered on via SELECT button long press
+# E-ink display task will only run when CM5 is powered off
+# This prevents conflicts between the two display modes
 
 # Main loop (runs on Core 0)
 debug.log_info(debug.CAT_SYSTEM, "=== Main loop starting ===")
@@ -928,7 +1380,19 @@ HEARTBEAT_INTERVAL = 10000  # 10 seconds - reduced for better responsiveness
 while True:
     try:
         wdt.feed()
-
+        
+        try:
+            if power_manager is not None and power_manager.bq27441 is not None:
+                if power_manager.get_current_ma() > 0:
+                    set_debug_color("CHARGING")
+                else:
+                    set_debug_color("MAIN_LOOP") 
+            else:
+                set_debug_color("MAIN_LOOP")
+        except Exception as e:
+            debug.log_error(debug.CAT_SYSTEM, f"Error setting debug color: {e}")
+            set_debug_color("MAIN_LOOP")
+      
         # Periodic health checks (non-critical - can fail without affecting power management)
         try:
             current_time = utime.ticks_ms()
@@ -965,10 +1429,19 @@ while True:
             check_power_on_trigger()
             check_force_shutdown_trigger()
             handle_power_timers()
+            check_emergency_battery_shutdown()
+            wdt.feed()
         except Exception as e:
             # Power management error is serious - log but continue trying
             debug.log_error(debug.CAT_POWER, f"Power State (power on and off) error: {e}")
             set_debug_color("ERROR")
+
+        # Battery status display (when CM5 is off)
+        try:
+            check_and_display_battery_status()
+        except Exception as e:
+            # Battery display error is non-critical - log but continue
+            debug.log_error(debug.CAT_POWER, f"Battery display check error (non-critical): {e}")
 
         # Sleep to allow other tasks to run
         utime.sleep_ms(100)

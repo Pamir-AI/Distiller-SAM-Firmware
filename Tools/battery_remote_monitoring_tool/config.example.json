@@ -1,0 +1,18 @@
+{
+    "ssh": {
+        "hostname": "192.168.0.105",
+        "username": "distiller",
+        "password": "one",
+        "port": 22
+    },
+    "monitoring": {
+        "max_plot_points": 300,
+        "update_interval_ms": 100,
+        "reconnect_delay_s": 5,
+        "data_timeout_s": 5
+    },
+    "logging": {
+        "base_directory": "logs",
+        "flush_interval": 10
+    }
+}

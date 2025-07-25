@@ -72,7 +72,7 @@ class BQ27441:
         self,
         *,
         design_capacity_mAh=3000,
-        terminate_voltage_mV=3200,
+        terminate_voltage_mV=2750,
         CALIBRATION=True,
         golden_image=None
     ):

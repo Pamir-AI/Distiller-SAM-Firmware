@@ -1,0 +1,241 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+pyvenv.cfg
+
+# PyCharm
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Project specific
+config.json
+secrets.json
+*.log
+*.csv
+logs/
+temp/
+tmp/
+cache/
+output/
+results/
+
+# Security sensitive files
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+.htaccess
+.htpasswd
+.env.*
+!.env.example
+secrets/
+credentials/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+*.save
+*.swp
+*.swo
+*.swn
+*.tmp
+
+# Test coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Documentation builds
+docs/_build/
+docs/_static/
+docs/_templates/
+site/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Session data
+flask_session/
+sessions/
+*.session
+
+# Compiled files
+*.com
+*.class
+*.dll
+*.exe
+*.o
+*.out
+
+# Archives
+*.7z
+*.dmg
+*.gz
+*.iso
+*.jar
+*.rar
+*.tar
+*.zip
+
+# Binary files (commented out as they appear to be project assets)
+# *.bin
+# *.uf2
+
+# Image processing artifacts
+processed/
+thumbnails/
+
+# Battery monitoring tool specific
+battery_remote_monitoring_tool/logs/
+battery_remote_monitoring_tool/*.csv
+battery_remote_monitoring_tool/config.json
+battery_remote_monitoring_tool/.venv/
+
+# Firmware specific
+firmware_backup/
+firmware_old/
+*.hex
+*.elf
+*.map
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Package manager
+node_modules/
+bower_components/
+package-lock.json
+yarn.lock
+.pnp.*
+.yarn/
+
+# Other
+.sass-cache/
+*.pid
+*.seed
+*.pid.lock
+.webassets-cache
+.scrapy
+target/
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+__pypackages__/
+celerybeat-schedule
+celerybeat.pid
+*.sage.py
+.venv
+.spyderproject
+.spyproject
+.ropeproject
+/site
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
