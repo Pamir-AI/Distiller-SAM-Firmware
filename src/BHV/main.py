@@ -106,6 +106,7 @@ DEBUG_COLORS = {
 if upBTN.value() and not selectBTN.value() and not downBTN.value():
     wdt.feed()
     # Switch USB to SOM_USB
+    pmic_enable.value(1)
     switch_usb("SOM_USB")
     set_debug_color("DEBUG_MODE")
     while True:
