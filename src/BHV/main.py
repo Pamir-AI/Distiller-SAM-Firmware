@@ -29,13 +29,11 @@ UART_TX_PIN = 0
 UART_RX_PIN = 1
 DEBUG_LED_PIN = 20
 LED_BAR_PIN = 6
-BUTTON_DEBOUNCE_MS = 50
 
 # Timing constants
 SELECT_LONG_PRESS_MS = 3000  # 3 seconds for power on
 FORCE_SHUTDOWN_PRESS_MS = 5000  # 5 seconds for force shutdown
 NORMAL_SHUTDOWN_DELAY_MS = 2000  # 2 seconds delay for normal shutdown
-FORCE_SHUTDOWN_DELAY_MS = 3000  # 3 seconds delay for force shutdown
 BATTERY_CHECK_INTERVAL = 10000  # 10 seconds between battery display checks
 EMERGENCY_SHUTDOWN_INTERVAL = 5000  # 5 seconds between emergency shutdown attempts
 
@@ -371,8 +369,6 @@ def reset_system_state():
     # Reset power-related timers
     power_state["shutdown_pending"] = False
     power_state["shutdown_timer"] = 0
-    power_state["force_shutdown_pending"] = False
-    power_state["force_shutdown_timer"] = 0
     
     # Reset battery display state to allow new battery displays when CM5 is off
     current_battery_display_action = "none"
@@ -478,24 +474,10 @@ def check_force_shutdown_trigger():
         else:
             # Check if long press duration reached
             press_duration = utime.ticks_diff(current_time, power_state["force_press_start"])
-            if press_duration >= FORCE_SHUTDOWN_PRESS_MS and not power_state["force_shutdown_pending"]:
+            if press_duration >= FORCE_SHUTDOWN_PRESS_MS:
                 # Initiate force shutdown
-                debug.log_info(debug.CAT_POWER, f"UP+DOWN long press ({press_duration}ms) - initiating force shutdown")
-                power_state["force_shutdown_pending"] = True
-                power_state["force_shutdown_timer"] = current_time
-                
-                # Send power_pressed event to notify CM5 we're about to force shutdown
-                try:
-                    packet = protocol.create_button_packet(
-                        up_pressed=False,
-                        down_pressed=False,
-                        select_pressed=False,
-                        power_pressed=True,  # This signals force shutdown
-                    )
-                    uart0.write(packet)
-                    debug.log_info(debug.CAT_POWER, f"Force shutdown warning sent to CM5 -> TX: {packet.hex()}")
-                except Exception as e:
-                    debug.log_error(debug.CAT_POWER, f"Failed to send force shutdown warning: {e}")
+                set_cm5_power(False) 
+                machine.reset()
     else:
         # Buttons released - reset timer
         if power_state["force_press_start"] != 0:
@@ -519,17 +501,6 @@ def handle_power_timers():
             power_state["shutdown_pending"] = False
             power_state["shutdown_timer"] = 0
     
-    # Handle force shutdown timer
-    if power_state["force_shutdown_pending"]:
-        elapsed = utime.ticks_diff(current_time, power_state["force_shutdown_timer"])
-        if elapsed >= FORCE_SHUTDOWN_DELAY_MS:
-            debug.log_info(debug.CAT_POWER, f"Force shutdown delay ({elapsed}ms) complete - powering off CM5")
-            set_cm5_power(False)
-            power_state["force_shutdown_pending"] = False
-            power_state["force_shutdown_timer"] = 0
-            
-            ##Reset RP2040 using machine.reset()
-            machine.reset()
             
 
 
@@ -581,8 +552,6 @@ def check_emergency_battery_shutdown():
             # Clear any pending shutdown states before emergency power off
             power_state["shutdown_pending"] = False
             power_state["shutdown_timer"] = 0
-            power_state["force_shutdown_pending"] = False
-            power_state["force_shutdown_timer"] = 0
             
             # Wait for 2 seconds to change the power state
             utime.sleep_ms(2000)
