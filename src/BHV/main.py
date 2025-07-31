@@ -91,7 +91,7 @@ DEBUG_COLORS = {
     "INIT": (255, 0, 0),  # Red - Initialization
     "EINK_RUNNING": (255, 255, 255),  # White - EINK_RUNNING
     "UART_READY": (0, 255, 0),  # Green - UART ready
-    "MAIN_LOOP": (0, 0, 255),  # Blue - Main loop
+    "MAIN_LOOP": (0, 0, 0),  # Blue - Main loop
     "ERROR": (255, 0, 255),  # Magenta - Error
     "PACKET_RX": (0, 255, 255),  # Cyan - Packet received
     "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
@@ -477,6 +477,10 @@ def check_force_shutdown_trigger():
             if press_duration >= FORCE_SHUTDOWN_PRESS_MS:
                 # Initiate force shutdown
                 set_cm5_power(False) 
+                
+                set_debug_color("ERROR")
+                utime.sleep_ms(1000) 
+                
                 machine.reset()
     else:
         # Buttons released - reset timer
