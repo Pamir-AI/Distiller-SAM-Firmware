@@ -45,8 +45,7 @@ debug = init_debug_handler(
     True,  # enable_statistics
 )
 
-# Initialize watchdog
-wdt = machine.WDT(timeout=2000)
+
 
 # GPIO setup
 selectBTN = machine.Pin(16, machine.Pin.IN, machine.Pin.PULL_DOWN)
@@ -100,6 +99,21 @@ DEBUG_COLORS = {
     "CHARGING": (255, 0, 0),  # Red - Charging
 }
 
+
+# SAM UART MODE
+if downBTN.value() and not selectBTN.value() and not upBTN.value():
+    # Switch USB to SAM_USB
+    switch_usb("SAM_USB")
+    set_debug_color("DEBUG_MODE")
+    while True:
+        utime.sleep_ms(1000) 
+else:    
+    # USB switch setup
+    switch_usb("SOM_USB")
+
+# Initialize watchdog
+wdt = machine.WDT(timeout=2000)
+
 # CM5 Firmware Upload Mode
 if upBTN.value() and not selectBTN.value() and not downBTN.value():
     wdt.feed()
@@ -152,18 +166,6 @@ set_debug_color("INIT")
 debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.4 Starting ===")
 
 
-# SAM UART MODE
-if downBTN.value() and not selectBTN.value() and not upBTN.value():
-    wdt.feed()
-    # Switch USB to SAM_USB
-    switch_usb("SAM_USB")
-    set_debug_color("DEBUG_MODE")
-    while True:
-        wdt.feed()
-        utime.sleep_ms(1000) 
-else:    
-    # USB switch setup
-    switch_usb("SOM_USB")
 
 # Initialize protocol handler
 protocol = PamirUartProtocols()
