@@ -158,6 +158,9 @@ if downBTN.value() and not selectBTN.value() and not upBTN.value():
     # Switch USB to SAM_USB
     switch_usb("SAM_USB")
     set_debug_color("DEBUG_MODE")
+    while True:
+        wdt.feed()
+        utime.sleep_ms(1000) 
 else:    
     # USB switch setup
     switch_usb("SOM_USB")
@@ -477,6 +480,11 @@ def check_force_shutdown_trigger():
             if press_duration >= FORCE_SHUTDOWN_PRESS_MS:
                 # Initiate force shutdown
                 set_cm5_power(False) 
+
+                # Delay and notify user, giving them enough time to trigger button presses for special modes.
+                set_debug_color("ERROR")
+                utime.sleep_ms(1000) 
+
                 machine.reset()
     else:
         # Buttons released - reset timer
