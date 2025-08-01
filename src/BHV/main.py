@@ -17,6 +17,7 @@ pmic_enable.value(0)
 
 # Configuration
 PRODUCTION = False  # Set to True for production builds
+DISABLE_LEDS = True
 LUT_MODE = True  # Set to True for LUT mode, False for fast mode
 EINK_ANIMATION_TIMEOUT = 2  # Maximum number of animation cycles before timeout
 INITIAL_DEBUG_LEVEL = (
@@ -86,18 +87,32 @@ def switch_usb(usb_type):
         debug.log_error(debug.CAT_SYSTEM, f"Invalid USB type: {usb_type}")
 
 
+# DEBUG_COLORS = {
+#     "OFF": (0, 0, 0),
+#     "INIT": (255, 0, 0),  # Red - Initialization
+#     "EINK_RUNNING": (255, 255, 255),  # White - EINK_RUNNING
+#     "UART_READY": (0, 255, 0),  # Green - UART ready
+#     "MAIN_LOOP": (0, 0, 255),  # Blue - Main loop
+#     "ERROR": (255, 0, 255),  # Magenta - Error
+#     "PACKET_RX": (0, 255, 255),  # Cyan - Packet received
+#     "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
+#     "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
+#     "DEBUG_MODE": (255, 255, 0),  # Yellow - Debug mode
+#     "CHARGING": (255, 0, 0),  # Red - Charging
+# }
+
 DEBUG_COLORS = {
     "OFF": (0, 0, 0),
     "INIT": (255, 0, 0),  # Red - Initialization
-    "EINK_RUNNING": (255, 255, 255),  # White - EINK_RUNNING
-    "UART_READY": (0, 255, 0),  # Green - UART ready
+    "EINK_RUNNING": (0, 0, 0),  # White - EINK_RUNNING
+    "UART_READY": (0, 0, 0),  # Green - UART ready
     "MAIN_LOOP": (0, 0, 0),  # Blue - Main loop
     "ERROR": (255, 0, 255),  # Magenta - Error
-    "PACKET_RX": (0, 255, 255),  # Cyan - Packet received
-    "PACKET_VALID": (0, 128, 0),  # Dark green - Valid packet
-    "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
+    "PACKET_RX": (0, 0, 0),  # Cyan - Packet received
+    "PACKET_VALID": (0, 0, 0),  # Dark green - Valid packet
+    "PACKET_INVALID": (0, 0, 0),  # Orange - Invalid packet
     "DEBUG_MODE": (255, 255, 0),  # Yellow - Debug mode
-    "CHARGING": (255, 0, 0),  # Red - Charging
+    "CHARGING": (0, 0, 0),  # Red - Charging
 }
 
 # CM5 Firmware Upload Mode
