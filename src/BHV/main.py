@@ -112,7 +112,7 @@ DEBUG_COLORS = {
     "PACKET_VALID": (0, 0, 0),  # Dark green - Valid packet
     "PACKET_INVALID": (0, 0, 0),  # Orange - Invalid packet
     "DEBUG_MODE": (255, 255, 0),  # Yellow - Debug mode
-    "CHARGING": (0, 0, 0),  # Red - Charging
+    "CHARGING": (255, 0, 0),  # Red - Charging
 }
 
 # CM5 Firmware Upload Mode
