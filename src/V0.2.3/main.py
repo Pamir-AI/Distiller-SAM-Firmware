@@ -173,6 +173,7 @@ display_release_received = False  # Flag to track display release signal
 
 # Packet processing functions
 
+
 def process_led_packet(packet_data):
     """Process LED control packet - directly control debug RGB LED with animation support"""
     valid, led_data = protocol.parse_led_packet(packet_data)
@@ -190,10 +191,12 @@ def process_led_packet(packet_data):
 
             # Get LED ID (0-15, map to available hardware LEDs)
             led_id = led_data["led_id"]
-            
+
             # Map LED ID to hardware index (constrain to available LEDs)
-            hardware_index = led_id % np_controller.num_leds  # Wrap around if LED ID > num_leds
-            
+            hardware_index = (
+                led_id % np_controller.num_leds
+            )  # Wrap around if LED ID > num_leds
+
             # Determine animation mode based on led_mode bits
             if led_mode == protocol.LED_MODE_STATIC:
                 # Static mode - set color immediately using NeoPixel controller
@@ -213,7 +216,9 @@ def process_led_packet(packet_data):
 
                 # Use NeoPixel controller for animation
                 np_controller.stop_animation()
-                np_controller.add_to_queue(hardware_index, np_controller.MODE_BLINK, (r, g, b), time_value)
+                np_controller.add_to_queue(
+                    hardware_index, np_controller.MODE_BLINK, (r, g, b), time_value
+                )
                 np_controller.execute_queue()
 
             elif led_mode == protocol.LED_MODE_FADE:
@@ -225,16 +230,23 @@ def process_led_packet(packet_data):
 
                 # Use NeoPixel controller for animation
                 np_controller.stop_animation()
-                np_controller.add_to_queue(hardware_index, np_controller.MODE_FADE, (r, g, b), time_value)
+                np_controller.add_to_queue(
+                    hardware_index, np_controller.MODE_FADE, (r, g, b), time_value
+                )
                 np_controller.execute_queue()
 
             elif led_mode == protocol.LED_MODE_RAINBOW:
                 # Rainbow mode
-                debug.log_info(debug.CAT_LED, f"LED {led_id} (hw_index={hardware_index}) rainbow mode: time={time_value}")
+                debug.log_info(
+                    debug.CAT_LED,
+                    f"LED {led_id} (hw_index={hardware_index}) rainbow mode: time={time_value}",
+                )
 
                 # Use NeoPixel controller for animation
                 np_controller.stop_animation()
-                np_controller.add_to_queue(hardware_index, np_controller.MODE_RAINBOW, (0, 0, 0), time_value)
+                np_controller.add_to_queue(
+                    hardware_index, np_controller.MODE_RAINBOW, (0, 0, 0), time_value
+                )
                 np_controller.execute_queue()
 
             else:
@@ -336,8 +348,10 @@ def process_power_packet(packet_data):
         try:
             execute_power_command()
         except Exception as e:
-            debug.log_error(debug.CAT_POWER, f"Immediate power command execution failed: {e}")
-            
+            debug.log_error(
+                debug.CAT_POWER, f"Immediate power command execution failed: {e}"
+            )
+
         # Also submit to task manager for statistics
         task_manager.submit_task(
             "POWER_COMMAND", execute_power_command, priority=task_manager.PRIORITY_HIGH
@@ -377,8 +391,10 @@ def process_display_packet(packet_data):
         if display_data["command"] == "release":
             global display_release_received
             display_release_received = True
-            debug.log_info(debug.CAT_DISPLAY, "Display release signal received - Pi has booted")
-            
+            debug.log_info(
+                debug.CAT_DISPLAY, "Display release signal received - Pi has booted"
+            )
+
             # Send acknowledgment
             def send_display_ack():
                 try:
@@ -389,10 +405,14 @@ def process_display_packet(packet_data):
                         f"Display release ACK sent -> TX: {ack_packet.hex()}",
                     )
                 except Exception as e:
-                    debug.log_error(debug.CAT_DISPLAY, f"Display release ACK failed: {e}")
+                    debug.log_error(
+                        debug.CAT_DISPLAY, f"Display release ACK failed: {e}"
+                    )
 
             task_manager.submit_task(
-                "DISPLAY_RELEASE_ACK", send_display_ack, priority=task_manager.PRIORITY_HIGH
+                "DISPLAY_RELEASE_ACK",
+                send_display_ack,
+                priority=task_manager.PRIORITY_HIGH,
             )
 
 
@@ -576,13 +596,15 @@ task_manager.submit_uart_task("UART_COMMUNICATION", uart_communication_task)
 def eink_display_task():
     """E-ink display animation task - runs with high priority until Pi boots"""
     global display_release_received
-    
-    try:
-        debug.log_info(debug.CAT_DISPLAY, "Starting E-ink display task - waiting for Pi boot")
 
-        # Import and initialize E-ink 
+    try:
+        debug.log_info(
+            debug.CAT_DISPLAY, "Starting E-ink display task - waiting for Pi boot"
+        )
+
+        # Import and initialize E-ink
         from eink_driver_sam import einkDSP_SAM
-        
+
         # Set debug color to EINK_RUNNING
         set_debug_color("EINK_RUNNING")
 
@@ -610,36 +632,45 @@ def eink_display_task():
             while not display_release_received and cycle < EINK_ANIMATION_MAX_CYCLES:
                 # Animate between frames
                 eink.epd_display_part_all(image2_data)
-                
+
                 # Check for release signal during animation
                 for i in range(10):  # Check 10 times during 100ms delay
                     if display_release_received:
                         break
                     utime.sleep_ms(10)
-                
+
                 if display_release_received:
                     break
-                    
+
                 eink.epd_display_part_all(base_image)
-                
+
                 # Check for release signal during animation
                 for i in range(10):  # Check 10 times during 100ms delay
                     if display_release_received:
                         break
                     utime.sleep_ms(10)
-                
+
                 cycle += 1
-                
+
                 # Yield to other tasks periodically
                 if cycle % 5 == 0:
                     utime.sleep_ms(50)
-                    debug.log_info(debug.CAT_DISPLAY, f"Animation cycle {cycle} - waiting for Pi boot")
+                    debug.log_info(
+                        debug.CAT_DISPLAY,
+                        f"Animation cycle {cycle} - waiting for Pi boot",
+                    )
 
             # Log why the animation loop ended
             if display_release_received:
-                debug.log_info(debug.CAT_DISPLAY, f"Animation ended after {cycle} cycles - Pi boot signal received")
+                debug.log_info(
+                    debug.CAT_DISPLAY,
+                    f"Animation ended after {cycle} cycles - Pi boot signal received",
+                )
             else:
-                debug.log_info(debug.CAT_DISPLAY, f"Animation ended after {cycle} cycles - timeout reached ({EINK_ANIMATION_MAX_CYCLES} max)")
+                debug.log_info(
+                    debug.CAT_DISPLAY,
+                    f"Animation ended after {cycle} cycles - timeout reached ({EINK_ANIMATION_MAX_CYCLES} max)",
+                )
 
         except OSError:
             set_debug_color("ERROR")
@@ -648,8 +679,10 @@ def eink_display_task():
         # Release eink control when Pi has booted or timeout reached
         debug.log_info(debug.CAT_DISPLAY, "Releasing eink control")
         eink.de_init()  # Release GPIO on RP2040 and set to high Z
-        einkMux.low()   # Reroute eink communication to Raspberry Pi
-        debug.log_info(debug.CAT_DISPLAY, "E-ink display task completed - control handed to Pi")
+        einkMux.low()  # Reroute eink communication to Raspberry Pi
+        debug.log_info(
+            debug.CAT_DISPLAY, "E-ink display task completed - control handed to Pi"
+        )
 
     except Exception as e:
         set_debug_color("ERROR")
@@ -680,7 +713,6 @@ while True:
         # Periodic health checks
         current_time = utime.ticks_ms()
         if utime.ticks_diff(current_time, last_heartbeat) >= HEARTBEAT_INTERVAL:
-
             # Check UART handler health
             uart_health = uart_handler.check_health()
             if uart_health["status"] != "HEALTHY":
