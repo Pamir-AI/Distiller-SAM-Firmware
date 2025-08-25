@@ -189,73 +189,160 @@ def process_led_packet(packet_data):
             time_value = led_data["time_value"]
             led_mode = led_data["led_mode"]
 
-            # Get LED ID (0-15, map to available hardware LEDs)
+            # Get LED ID (0-15 per protocol spec)
             led_id = led_data["led_id"]
 
-            # Map LED ID to hardware index (constrain to available LEDs)
-            hardware_index = (
-                led_id % np_controller.num_leds
-            )  # Wrap around if LED ID > num_leds
+            # Handle broadcast ID (15) and validate LED IDs
+            if led_id == 15:
+                # Broadcast to ALL LEDs
+                if led_mode == protocol.LED_MODE_STATIC:
+                    # Static mode - set all LEDs to the same color
+                    rgb_color = np_controller.rgb444_to_rgb888((r, g, b))
+                    np_controller.set_color(rgb_color)  # No index = all LEDs
+                    debug.log_info(
+                        debug.CAT_LED,
+                        f"LED BROADCAST set to RGB({r}, {g}, {b}) -> All LEDs updated (static)",
+                    )
+                else:
+                    # For animation modes, we'll handle broadcast below
+                    hardware_index = None  # Signal broadcast mode
 
-            # Determine animation mode based on led_mode bits
-            if led_mode == protocol.LED_MODE_STATIC:
-                # Static mode - set color immediately using NeoPixel controller
-                rgb_color = np_controller.rgb444_to_rgb888((r, g, b))
-                np_controller.set_color(rgb_color, index=hardware_index)
-                debug.log_info(
-                    debug.CAT_LED,
-                    f"LED {led_id} (hw_index={hardware_index}) set to RGB({r}, {g}, {b}) -> RGB LED updated (static)",
-                )
+            elif led_id < np_controller.num_leds:
+                # Valid individual LED ID for this hardware
+                hardware_index = led_id
 
-            elif led_mode == protocol.LED_MODE_BLINK:
-                # Blink mode
-                debug.log_info(
-                    debug.CAT_LED,
-                    f"LED {led_id} (hw_index={hardware_index}) blink mode: RGB({r}, {g}, {b}) time={time_value}",
-                )
-
-                # Use NeoPixel controller for animation
-                np_controller.stop_animation()
-                np_controller.add_to_queue(
-                    hardware_index, np_controller.MODE_BLINK, (r, g, b), time_value
-                )
-                np_controller.execute_queue()
-
-            elif led_mode == protocol.LED_MODE_FADE:
-                # Fade mode
-                debug.log_info(
-                    debug.CAT_LED,
-                    f"LED {led_id} (hw_index={hardware_index}) fade mode: RGB({r}, {g}, {b}) time={time_value}",
-                )
-
-                # Use NeoPixel controller for animation
-                np_controller.stop_animation()
-                np_controller.add_to_queue(
-                    hardware_index, np_controller.MODE_FADE, (r, g, b), time_value
-                )
-                np_controller.execute_queue()
-
-            elif led_mode == protocol.LED_MODE_RAINBOW:
-                # Rainbow mode
-                debug.log_info(
-                    debug.CAT_LED,
-                    f"LED {led_id} (hw_index={hardware_index}) rainbow mode: time={time_value}",
-                )
-
-                # Use NeoPixel controller for animation
-                np_controller.stop_animation()
-                np_controller.add_to_queue(
-                    hardware_index, np_controller.MODE_RAINBOW, (0, 0, 0), time_value
-                )
-                np_controller.execute_queue()
-
+                # Determine animation mode based on led_mode bits
+                if led_mode == protocol.LED_MODE_STATIC:
+                    # Static mode - set color immediately using NeoPixel controller
+                    rgb_color = np_controller.rgb444_to_rgb888((r, g, b))
+                    np_controller.set_color(rgb_color, index=hardware_index)
+                    debug.log_info(
+                        debug.CAT_LED,
+                        f"LED {led_id} set to RGB({r}, {g}, {b}) -> RGB LED updated (static)",
+                    )
             else:
-                # Unknown mode - default to static
-                debug.log_info(
-                    debug.CAT_LED, f"Unknown LED mode: 0x{led_mode:02X}, using static"
+                # Invalid LED ID for this hardware
+                debug.log_error(
+                    debug.CAT_LED,
+                    f"Invalid LED ID {led_id} for hardware with {np_controller.num_leds} LEDs",
                 )
-                rgb_color = np_controller.rgb444_to_rgb888((r, g, b))
-                np_controller.set_color(rgb_color, index=hardware_index)
+                # Send error acknowledgment if execute bit was set
+                if led_data.get("execute", False):
+                    try:
+                        error_packet = protocol.create_led_completion_packet(
+                            led_id, -4
+                        )  # Invalid LED ID error
+                        uart0.write(error_packet)
+                        debug.log_error(
+                            debug.CAT_LED,
+                            f"LED error ACK sent for invalid LED ID {led_id}",
+                        )
+                    except Exception:
+                        pass  # Best effort - error ACK failed
+                return  # Exit early for invalid LED ID
+
+            # Continue with animation modes only if we have a valid LED ID or broadcast
+            if led_id == 15 or led_id < np_controller.num_leds:
+                # Skip static mode as it's already handled above
+                if led_mode != protocol.LED_MODE_STATIC:
+                    if led_mode == protocol.LED_MODE_BLINK:
+                        # Blink mode
+                        if led_id == 15:
+                            # Broadcast blink to all LEDs
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED BROADCAST blink mode: RGB({r}, {g}, {b}) time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            # Add all LEDs to the queue
+                            for i in range(np_controller.num_leds):
+                                np_controller.add_to_queue(
+                                    i, np_controller.MODE_BLINK, (r, g, b), time_value
+                                )
+                            np_controller.execute_queue()
+                        else:
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED {led_id} blink mode: RGB({r}, {g}, {b}) time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            np_controller.add_to_queue(
+                                hardware_index,
+                                np_controller.MODE_BLINK,
+                                (r, g, b),
+                                time_value,
+                            )
+                            np_controller.execute_queue()
+
+                    elif led_mode == protocol.LED_MODE_FADE:
+                        # Fade mode
+                        if led_id == 15:
+                            # Broadcast fade to all LEDs
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED BROADCAST fade mode: RGB({r}, {g}, {b}) time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            # Add all LEDs to the queue
+                            for i in range(np_controller.num_leds):
+                                np_controller.add_to_queue(
+                                    i, np_controller.MODE_FADE, (r, g, b), time_value
+                                )
+                            np_controller.execute_queue()
+                        else:
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED {led_id} fade mode: RGB({r}, {g}, {b}) time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            np_controller.add_to_queue(
+                                hardware_index,
+                                np_controller.MODE_FADE,
+                                (r, g, b),
+                                time_value,
+                            )
+                            np_controller.execute_queue()
+
+                    elif led_mode == protocol.LED_MODE_RAINBOW:
+                        # Rainbow mode - ignore RGB values
+                        if led_id == 15:
+                            # Broadcast rainbow to all LEDs
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED BROADCAST rainbow mode: time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            # Add all LEDs to the queue
+                            for i in range(np_controller.num_leds):
+                                np_controller.add_to_queue(
+                                    i, np_controller.MODE_RAINBOW, (0, 0, 0), time_value
+                                )
+                            np_controller.execute_queue()
+                        else:
+                            debug.log_info(
+                                debug.CAT_LED,
+                                f"LED {led_id} rainbow mode: time={time_value}",
+                            )
+                            np_controller.stop_animation()
+                            np_controller.add_to_queue(
+                                hardware_index,
+                                np_controller.MODE_RAINBOW,
+                                (0, 0, 0),
+                                time_value,
+                            )
+                            np_controller.execute_queue()
+
+                    else:
+                        # Unknown mode - default to static
+                        debug.log_info(
+                            debug.CAT_LED,
+                            f"Unknown LED mode: 0x{led_mode:02X}, using static",
+                        )
+                        rgb_color = np_controller.rgb444_to_rgb888((r, g, b))
+                        if led_id == 15:
+                            np_controller.set_color(rgb_color)  # Broadcast
+                        else:
+                            np_controller.set_color(rgb_color, index=hardware_index)
 
             # Send acknowledgment if needed
             if led_data.get("execute", False):
@@ -266,9 +353,26 @@ def process_led_packet(packet_data):
                     debug.log_info(debug.CAT_LED, f"LED ACK sent: {ack_packet.hex()}")
                 except Exception as e:
                     debug.log_error(debug.CAT_LED, f"LED ACK failed: {e}")
+                    # Send error acknowledgment
+                    try:
+                        error_packet = protocol.create_led_completion_packet(led_id, -1)
+                        uart0.write(error_packet)
+                    except Exception:
+                        pass  # Best effort - error ACK failed
 
         except Exception as e:
             debug.log_error(debug.CAT_LED, f"LED command failed: {e}")
+            # Send error acknowledgment if execute bit was set
+            if led_data.get("execute", False):
+                try:
+                    led_id = led_data.get("led_id", 0)
+                    error_packet = protocol.create_led_completion_packet(led_id, -2)
+                    uart0.write(error_packet)
+                    debug.log_error(
+                        debug.CAT_LED, f"LED error ACK sent for LED {led_id}"
+                    )
+                except Exception:
+                    pass  # Best effort - error ACK failed
     else:
         # Try parsing as acknowledgment
         valid_ack, ack_data = protocol.parse_led_acknowledgment(packet_data)
@@ -691,8 +795,8 @@ def eink_display_task():
         try:
             eink.de_init()
             einkMux.low()
-        except:
-            pass
+        except Exception:
+            pass  # Best effort - cleanup failed
 
 
 # Run E-ink task directly on core 0 (blocking)

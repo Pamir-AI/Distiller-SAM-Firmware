@@ -38,6 +38,10 @@ class NeoPixelController:
         self.last_executed_led_id = 0
         self.last_sequence_length = 0
 
+        # Timeout configuration
+        self.animation_timeout_ms = 5000  # 5 second timeout for animations
+        self.animation_start_time = 0
+
         # Clear all LEDs on init
         self.clear_all()
 
@@ -97,17 +101,21 @@ class NeoPixelController:
         """Add LED command to animation queue
 
         Args:
-            led_id: LED index (0-15, or 255 for all LEDs)
+            led_id: LED index (0-15, or 15 for all LEDs)
             mode: Animation mode (MODE_STATIC, MODE_BLINK, etc.)
             color_data: (r4, g4, b4) tuple (4-bit values)
-            time_value: Timing parameter (0-15)
+            time_value: Timing parameter (0-3)
         """
+        # Map timing values to spec: 0=100ms, 1=200ms, 2=500ms, 3=1000ms
+        timing_map = [100, 200, 500, 1000]
+        delay_ms = timing_map[time_value & 0x03]  # Ensure 0-3 range
+
         command = {
             "led_id": led_id,
             "mode": mode,
             "color": self.rgb444_to_rgb888(color_data),
             "time_value": time_value,
-            "delay_ms": (time_value + 1) * 100,  # Convert to milliseconds
+            "delay_ms": delay_ms,
         }
         self.animation_queue.append(command)
 
@@ -125,12 +133,21 @@ class NeoPixelController:
     def _execute_animation_immediate(self):
         """Execute animation queue immediately without threading"""
         self.animation_running = True
+        self.animation_start_time = utime.ticks_ms()
         executed_commands = 0
         last_led_id = 0
 
         try:
             for command in self.animation_queue:
                 if not self.animation_running:
+                    break
+
+                # Check for timeout
+                elapsed = utime.ticks_diff(utime.ticks_ms(), self.animation_start_time)
+                if elapsed > self.animation_timeout_ms:
+                    print(f"Animation timeout after {elapsed}ms")
+                    if self.completion_callback:
+                        self.completion_callback(last_led_id, -3)  # Timeout error code
                     break
 
                 led_id = command["led_id"]
@@ -224,7 +241,7 @@ class NeoPixelController:
 
     def _animate_static(self, led_id, color):
         """Set static color"""
-        if led_id == 255:  # All LEDs
+        if led_id == 15:  # All LEDs (broadcast ID per spec)
             self.set_color(color)
         else:
             self.set_color(color, index=led_id)
@@ -236,14 +253,14 @@ class NeoPixelController:
                 break
 
             # Turn on
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(color)
             else:
                 self.set_color(color, index=led_id)
             utime.sleep_ms(delay_ms // 2)
 
             # Turn off
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color([0, 0, 0])
             else:
                 self.set_color([0, 0, 0], index=led_id)
@@ -261,7 +278,7 @@ class NeoPixelController:
             brightness = i / steps
             faded_color = [int(c * brightness) for c in color]
 
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
@@ -274,7 +291,7 @@ class NeoPixelController:
             brightness = i / steps
             faded_color = [int(c * brightness) for c in color]
 
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
@@ -292,7 +309,7 @@ class NeoPixelController:
             # Convert HSV to RGB
             rgb = self._hsv_to_rgb(hue, 255, 255)
 
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(rgb)
             else:
                 self.set_color(rgb, index=led_id)
@@ -343,22 +360,27 @@ class NeoPixelController:
             if not self.animation_running:
                 break
 
+            # Check for timeout
+            elapsed = utime.ticks_diff(utime.ticks_ms(), self.animation_start_time)
+            if elapsed > self.animation_timeout_ms:
+                break
+
             # Turn on
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(color)
             else:
                 self.set_color(color, index=led_id)
             utime.sleep_ms(on_time)
 
             # Turn off
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color([0, 0, 0])
             else:
                 self.set_color([0, 0, 0], index=led_id)
             utime.sleep_ms(off_time)
 
         # Leave LED on at the end
-        if led_id == 255:
+        if led_id == 15:  # Broadcast ID per spec
             self.set_color(color)
         else:
             self.set_color(color, index=led_id)
@@ -373,10 +395,15 @@ class NeoPixelController:
             if not self.animation_running:
                 break
 
+            # Check for timeout
+            elapsed = utime.ticks_diff(utime.ticks_ms(), self.animation_start_time)
+            if elapsed > self.animation_timeout_ms:
+                break
+
             brightness = (i + 1) / steps
             faded_color = [int(c * brightness) for c in color]
 
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
@@ -387,17 +414,22 @@ class NeoPixelController:
             if not self.animation_running:
                 break
 
+            # Check for timeout
+            elapsed = utime.ticks_diff(utime.ticks_ms(), self.animation_start_time)
+            if elapsed > self.animation_timeout_ms:
+                break
+
             brightness = (steps - i) / steps
             faded_color = [int(c * brightness) for c in color]
 
-            if led_id == 255:
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
             utime.sleep_ms(step_delay)
 
         # Leave LED on at the end
-        if led_id == 255:
+        if led_id == 15:  # Broadcast ID per spec
             self.set_color(color)
         else:
             self.set_color(color, index=led_id)
@@ -420,7 +452,12 @@ class NeoPixelController:
             if not self.animation_running:
                 break
 
-            if led_id == 255:
+            # Check for timeout
+            elapsed = utime.ticks_diff(utime.ticks_ms(), self.animation_start_time)
+            if elapsed > self.animation_timeout_ms:
+                break
+
+            if led_id == 15:  # Broadcast ID per spec
                 self.set_color(color)
             else:
                 self.set_color(color, index=led_id)
@@ -465,3 +502,11 @@ class NeoPixelController:
             callback: Function to call when sequences complete (led_id, sequence_length)
         """
         self.completion_callback = callback
+
+    def set_animation_timeout(self, timeout_ms):
+        """Set the animation timeout in milliseconds
+
+        Args:
+            timeout_ms: Timeout in milliseconds (minimum 100ms, maximum 30000ms)
+        """
+        self.animation_timeout_ms = min(max(timeout_ms, 100), 30000)
