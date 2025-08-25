@@ -73,7 +73,7 @@ class BQ27441:
         design_capacity_mAh=3000,
         terminate_voltage_mV=3200,
         CALIBRATION=True,
-        golden_image=None
+        golden_image=None,
     ):
         """
         If CALIBRATION=True  → write DesignCap/TerminateV and clear BIE.

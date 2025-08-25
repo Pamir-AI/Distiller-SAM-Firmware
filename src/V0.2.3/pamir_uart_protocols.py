@@ -40,13 +40,13 @@ class PamirUartProtocols:
     # Special LED IDs
     LED_ALL = 0x0F  # Broadcast to all LEDs (ID 15)
 
-    # Power command constants 
+    # Power command constants
     # Control commands (0x00-0x0F)
     POWER_CMD_QUERY = 0x00  # Query current power status
     POWER_CMD_SET = 0x01  # Set power state
     POWER_CMD_SLEEP = 0x02  # Enter sleep mode
     POWER_CMD_SHUTDOWN = 0x03  # Shutdown system
-    
+
     # Reporting commands (0x10-0x1F)
     POWER_CMD_CURRENT = 0x10  # Current draw reporting
     POWER_CMD_BATTERY = 0x11  # Battery state reporting
@@ -75,7 +75,7 @@ class PamirUartProtocols:
                     crc <<= 1
                 crc &= 0xFF  # Keep it as 8-bit
         return crc
-    
+
     def calculate_checksum(self, type_flags, data0, data1):
         """Calculate CRC8 checksum for packet"""
         return self.calculate_crc8([type_flags, data0, data1])
@@ -277,11 +277,11 @@ class PamirUartProtocols:
         # Extract LED command fields
         execute = bool(type_flags & self.LED_CMD_EXECUTE)
         led_id = type_flags & 0x0F  # LED ID is in bits 3-0 (0-15)
-        
+
         # Extract RGB values from data[0]
         r4 = (data0 >> 4) & 0x0F  # Red in bits 7-4
-        g4 = data0 & 0x0F         # Green in bits 3-0
-        
+        g4 = data0 & 0x0F  # Green in bits 3-0
+
         # Extract blue, mode, and timing from data[1]
         b4 = (data1 >> 4) & 0x0F  # Blue in bits 7-4
         led_mode = (data1 >> 2) & 0x03  # Mode in bits 3-2
@@ -438,7 +438,7 @@ class PamirUartProtocols:
 
         type_flags, data0, data1, checksum = parsed
 
-       # Check if this is a power packet
+        # Check if this is a power packet
         if (type_flags & 0xE0) == self.TYPE_POWER:
             # Extract power command from 5 LSB (supports both control and reporting commands)
             command = type_flags & 0x1F
@@ -652,13 +652,21 @@ class PamirUartProtocols:
             if data0 == 0xFF:
                 display_data = {"command": "release", "signal": data0}
             else:
-                display_data = {"command": "unknown_release", "data0": data0, "data1": data1}
+                display_data = {
+                    "command": "unknown_release",
+                    "data0": data0,
+                    "data1": data1,
+                }
         elif command == 0x01:
             # Display status or completion
             if data0 == 0xFF:
                 display_data = {"command": "completion", "data1": data1}
             else:
-                display_data = {"command": "status", "status_code": data0, "data1": data1}
+                display_data = {
+                    "command": "status",
+                    "status_code": data0,
+                    "data1": data1,
+                }
         else:
             # Unknown display command
             display_data = {

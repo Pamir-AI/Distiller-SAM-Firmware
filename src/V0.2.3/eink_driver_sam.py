@@ -1,9 +1,9 @@
 import machine
 import utime
-#TODO unblock the eink await 
+# TODO unblock the eink await
+
 
 class einkDSP_SAM:
-
     def __init__(self) -> None:
         self.oldData = 0x00
 
@@ -16,15 +16,21 @@ class einkDSP_SAM:
         self.EPD_WIDTH = 128
         self.EPD_HEIGHT = 250
         self.EPD_ARRAY = self.EPD_WIDTH * self.EPD_HEIGHT // 8
-    
+
         # Initialize SPI
-        self.spi = machine.SPI(1,baudrate=25000000,sck=machine.Pin(14, machine.Pin.OUT), mosi=machine.Pin(15, machine.Pin.OUT), miso=machine.Pin(8, machine.Pin.OUT))
+        self.spi = machine.SPI(
+            1,
+            baudrate=25000000,
+            sck=machine.Pin(14, machine.Pin.OUT),
+            mosi=machine.Pin(15, machine.Pin.OUT),
+            miso=machine.Pin(8, machine.Pin.OUT),
+        )
         self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1)
         self.init = True
         self.watchdogCounter = 0
-        
+
         # Remove old LUT tables as Display_EPD_W21 doesn't use them
-    
+
     def de_init(self):
         self.spi.deinit()
         self.DC_PIN = machine.Pin(12, machine.Pin.IN, None)
@@ -35,16 +41,22 @@ class einkDSP_SAM:
         machine.Pin(15, machine.Pin.IN, None)
         machine.Pin(8, machine.Pin.IN, None)
         self.init = False
-            
+
     def re_init(self):
         self.DC_PIN = machine.Pin(12, machine.Pin.OUT)
         self.RST_PIN = machine.Pin(11, machine.Pin.OUT)
         self.BUSY_PIN = machine.Pin(10, machine.Pin.IN, machine.Pin.PULL_UP)
 
-        self.spi = machine.SPI(1,baudrate=25000000,sck=machine.Pin(14, machine.Pin.OUT), mosi=machine.Pin(15, machine.Pin.OUT), miso=machine.Pin(8, machine.Pin.OUT))
-        self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1) 
+        self.spi = machine.SPI(
+            1,
+            baudrate=25000000,
+            sck=machine.Pin(14, machine.Pin.OUT),
+            mosi=machine.Pin(15, machine.Pin.OUT),
+            miso=machine.Pin(8, machine.Pin.OUT),
+        )
+        self.cs = machine.Pin(13, mode=machine.Pin.OUT, value=1)
         self.init = True
-        
+
     def SPI_Delay(self):
         utime.sleep_us(10)  # 10 microseconds
 
@@ -64,7 +76,7 @@ class einkDSP_SAM:
         self.SPI_Write(data)
 
     def delay_xms(self, xms):
-        utime.sleep_us(xms*1000)
+        utime.sleep_us(xms * 1000)
 
     def lcd_chkstatus(self):
         # Busy function - adapted from Epaper_READBUSY()
@@ -81,27 +93,27 @@ class einkDSP_SAM:
         self.delay_xms(10)  # At least 10ms delay
         self.RST_PIN.high()
         self.delay_xms(10)  # At least 10ms delay
-        
+
         self.lcd_chkstatus()
         self.epd_w21_write_cmd(0x12)  # SWRESET
         self.lcd_chkstatus()
-        
+
         self.epd_w21_write_cmd(0x01)  # Driver output control
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) % 256)
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) // 256)
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) % 256)
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) // 256)
         self.epd_w21_write_data(0x00)
 
         self.epd_w21_write_cmd(0x11)  # data entry mode
         self.epd_w21_write_data(0x01)  # Normal mode
 
         self.epd_w21_write_cmd(0x44)  # set Ram-X address start/end position
-        self.epd_w21_write_data(0x00)                 # Start first
-        self.epd_w21_write_data(self.EPD_WIDTH//8-1)  # End second
+        self.epd_w21_write_data(0x00)  # Start first
+        self.epd_w21_write_data(self.EPD_WIDTH // 8 - 1)  # End second
 
         self.epd_w21_write_cmd(0x45)  # set Ram-Y address start/end position
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) % 256)  # Start with height-1
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) // 256)
-        self.epd_w21_write_data(0x00)                       # End with 0
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) % 256)  # Start with height-1
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) // 256)
+        self.epd_w21_write_data(0x00)  # End with 0
         self.epd_w21_write_data(0x00)
 
         self.epd_w21_write_cmd(0x3C)  # BorderWavefrom
@@ -116,10 +128,10 @@ class einkDSP_SAM:
 
         self.epd_w21_write_cmd(0x4E)  # set RAM x address count
         self.epd_w21_write_data(0x00)  # Start at 0
-            
+
         self.epd_w21_write_cmd(0x4F)  # set RAM y address count
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) % 256)  # Start at height-1
-        self.epd_w21_write_data((self.EPD_HEIGHT-1) // 256)
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) % 256)  # Start at height-1
+        self.epd_w21_write_data((self.EPD_HEIGHT - 1) // 256)
         self.lcd_chkstatus()
 
     # Fast refresh initialization - adapted from EPD_HW_Init_Fast2() (renamed from Fast2 as it's faster)
@@ -129,13 +141,13 @@ class einkDSP_SAM:
         self.delay_xms(10)  # At least 10ms delay
         self.RST_PIN.high()
         self.delay_xms(10)  # At least 10ms delay
-        
+
         self.epd_w21_write_cmd(0x12)  # SWRESET
         self.lcd_chkstatus()
-        
+
         self.epd_w21_write_cmd(0x18)  # Read built-in temperature sensor
         self.epd_w21_write_data(0x80)
-        
+
         self.epd_w21_write_cmd(0x22)  # Load temperature value
         self.epd_w21_write_data(0xB1)
         self.epd_w21_write_cmd(0x20)
@@ -144,13 +156,11 @@ class einkDSP_SAM:
         self.epd_w21_write_cmd(0x1A)  # Write to temperature register
         self.epd_w21_write_data(0x5A)  # Fast2 value (0x5A vs 0x64 in original fast)
         self.epd_w21_write_data(0x00)
-        
+
         self.epd_w21_write_cmd(0x22)  # Load temperature value
         self.epd_w21_write_data(0x91)
         self.epd_w21_write_cmd(0x20)
         self.lcd_chkstatus()
-
-
 
     # Update functions - adapted from Arduino version
     def epd_update(self):
@@ -210,11 +220,11 @@ class einkDSP_SAM:
         self.epd_w21_write_cmd(0x24)  # write RAM for black(0)/white (1)
         for i in range(self.EPD_ARRAY):
             self.epd_w21_write_data(image[i])
-        
+
         self.epd_w21_write_cmd(0x26)  # write RAM for black(0)/white (1)
         for i in range(self.EPD_ARRAY):
             self.epd_w21_write_data(0x00)
-        
+
         self.epd_update_fast()
 
     # Partial refresh functions - adapted from Arduino version
@@ -227,7 +237,7 @@ class einkDSP_SAM:
         else:
             for i in range(min(len(image_data), self.EPD_ARRAY)):
                 self.epd_w21_write_data(image_data[i])
-        
+
         self.epd_w21_write_cmd(0x26)  # Write Black and White image to RAM
         if isinstance(image_data, bytes):
             for byte in image_data:
@@ -235,7 +245,7 @@ class einkDSP_SAM:
         else:
             for i in range(min(len(image_data), self.EPD_ARRAY)):
                 self.epd_w21_write_data(image_data[i])
-        
+
         self.epd_update()
 
     def epd_display_part_all(self, image_data):
@@ -245,7 +255,7 @@ class einkDSP_SAM:
         self.delay_xms(10)
         self.RST_PIN.high()
         self.delay_xms(10)
-        
+
         self.epd_w21_write_cmd(0x3C)  # BorderWavefrom
         self.epd_w21_write_data(0x80)
 
@@ -256,7 +266,7 @@ class einkDSP_SAM:
         else:
             for i in range(min(len(image_data), self.EPD_ARRAY)):
                 self.epd_w21_write_data(image_data[i])
-        
+
         self.epd_update_part()
 
     # Deep sleep function - adapted from EPD_DeepSleep()
@@ -279,9 +289,9 @@ class einkDSP_SAM:
     def PIC_display(self, old_file_path, file_path):
         # Updated to use new Display_EPD_W21 style commands
         self.epd_w21_write_cmd(0x24)  # write RAM for black(0)/white (1)
-        
+
         if file_path is not None:
-            with open(file_path, 'rb') as file:
+            with open(file_path, "rb") as file:
                 byte = file.read(1)
                 while byte:
                     self.epd_w21_write_data(ord(byte))
@@ -295,7 +305,6 @@ class einkDSP_SAM:
     def PIC_clear(self):
         # Clear screen - use white clear
         self.epd_clear_white()
-    
 
 
 # einkMux = machine.Pin(22, machine.Pin.OUT)

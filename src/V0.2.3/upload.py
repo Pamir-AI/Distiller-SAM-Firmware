@@ -244,7 +244,7 @@ def flash_uf2_file(uf2_filename, description):
     if flash_uf2_file_applescript(uf2_filename, description):
         return True
 
-    print(f"AppleScript failed, trying manual copy methods...")
+    print("AppleScript failed, trying manual copy methods...")
     print(f"Copying {description}...")
 
     try:
@@ -430,7 +430,7 @@ def upload_python_files(file_list=None):
             print(f"Warning: {filename} not found, skipping...")
             continue
 
-        print(f"Uploading {filename} ({i+1}/{total_files})")
+        print(f"Uploading {filename} ({i + 1}/{total_files})")
 
         try:
             # Run ampy command
@@ -444,7 +444,7 @@ def upload_python_files(file_list=None):
             # Progress indicator
             progress = int((i + 1) * 50 / total_files)
             bar = "#" * progress + "-" * (50 - progress)
-            print(f"Progress: [{bar}] {int((i+1)*100/total_files)}%")
+            print(f"Progress: [{bar}] {int((i + 1) * 100 / total_files)}%")
 
         except subprocess.TimeoutExpired:
             print(f"Timeout uploading {filename}")

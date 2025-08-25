@@ -338,25 +338,25 @@ class NeoPixelController:
         blink_count = 3  # Number of blinks
         on_time = min(delay_ms // 2, 200)  # Time LED is on
         off_time = min(delay_ms // 2, 200)  # Time LED is off
-        
+
         for i in range(blink_count):
             if not self.animation_running:
                 break
-                
+
             # Turn on
             if led_id == 255:
                 self.set_color(color)
             else:
                 self.set_color(color, index=led_id)
             utime.sleep_ms(on_time)
-            
+
             # Turn off
             if led_id == 255:
                 self.set_color([0, 0, 0])
             else:
                 self.set_color([0, 0, 0], index=led_id)
             utime.sleep_ms(off_time)
-        
+
         # Leave LED on at the end
         if led_id == 255:
             self.set_color(color)
@@ -367,35 +367,35 @@ class NeoPixelController:
         """Quick fade animation - fade in and out"""
         steps = 10  # Number of fade steps
         step_delay = min(delay_ms // (steps * 2), 50)  # Delay per step
-        
+
         # Fade in
         for i in range(steps):
             if not self.animation_running:
                 break
-                
+
             brightness = (i + 1) / steps
             faded_color = [int(c * brightness) for c in color]
-            
+
             if led_id == 255:
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
             utime.sleep_ms(step_delay)
-        
+
         # Fade out
         for i in range(steps):
             if not self.animation_running:
                 break
-                
+
             brightness = (steps - i) / steps
             faded_color = [int(c * brightness) for c in color]
-            
+
             if led_id == 255:
                 self.set_color(faded_color)
             else:
                 self.set_color(faded_color, index=led_id)
             utime.sleep_ms(step_delay)
-        
+
         # Leave LED on at the end
         if led_id == 255:
             self.set_color(color)
@@ -405,27 +405,26 @@ class NeoPixelController:
     def _animate_rainbow_quick(self, led_id, delay_ms):
         """Quick rainbow animation - show a few colors"""
         colors = [
-            [255, 0, 0],    # Red
+            [255, 0, 0],  # Red
             [255, 127, 0],  # Orange
             [255, 255, 0],  # Yellow
-            [0, 255, 0],    # Green
-            [0, 0, 255],    # Blue
-            [75, 0, 130],   # Indigo
-            [148, 0, 211]   # Violet
+            [0, 255, 0],  # Green
+            [0, 0, 255],  # Blue
+            [75, 0, 130],  # Indigo
+            [148, 0, 211],  # Violet
         ]
-        
+
         step_delay = max(10, delay_ms // len(colors))
-        
+
         for color in colors:
             if not self.animation_running:
                 break
-                
+
             if led_id == 255:
                 self.set_color(color)
             else:
                 self.set_color(color, index=led_id)
             utime.sleep_ms(step_delay)
-
 
     def get_status(self):
         """Get current LED controller status
