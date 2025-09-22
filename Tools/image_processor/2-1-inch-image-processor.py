@@ -87,7 +87,7 @@ def create_test_pattern(width: int, height: int):
 # Process loading1.bin (Image A)
 print("=== Processing loading1.bin ===")
 image_path_a = "/Users/chengmingzhang/CodingProjects/Software/Distiller-SAM-Firmware/Asset/Loading-A-2-1-inch.png"
-output_path_a = '/Users/chengmingzhang/CodingProjects/Software/Distiller-SAM-Firmware/src/V0.2.2/bin/loading1.bin'
+output_path_a = '/Users/chengmingzhang/CodingProjects/Software/Distiller-SAM-Firmware/src/V0.2.3/bin/loading1.bin'
 
 try:
     if os.path.exists(image_path_a):
