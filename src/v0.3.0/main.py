@@ -11,8 +11,17 @@ from pamir_uart_protocols import PamirUartProtocols
 from neopixel_controller import NeoPixelController
 from power_manager import PowerManager
 
-# KEEP THIS LINE FIRST LINE OF THE FILE
-pmic_enable = machine.Pin(3, machine.Pin.IN, pull=None)
+###### KEEP THIS LINES FIRST OF THE FILE
+# this routine ensures the power is stable before turning on the CM5 
+cm_pmic_enable = machine.Pin(3, machine.Pin.OUT, value=0)
+
+i2c = machine.I2C(0, sda=machine.Pin(24), scl=machine.Pin(25))
+i2c.writeto_mem(0x5c, 0x08, bytes([0xff,0xff]))
+
+utime.sleep_ms(200)
+
+cm_pmic_enable = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
+###### ------------------------------------------------------------
 
 # Configuration
 PRODUCTION = False  # Set to True for production builds

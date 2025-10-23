@@ -466,3 +466,4 @@ class NeoPixelController:
             callback: Function to call when sequences complete (led_id, sequence_length)
         """
         self.completion_callback = callback
+
