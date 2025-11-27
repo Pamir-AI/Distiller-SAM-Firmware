@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Author: PamirAI
 # Date: 2025-07-13
-# Version: 0.2.3
+# Version: 0.2.8
 # Description: Python-based upload script for RP2040 SAM firmware with robust UF2 flashing
 
 import os
@@ -12,6 +12,9 @@ import signal
 import sys
 import argparse
 from pathlib import Path
+
+# Import boot image generator
+from generate_boot_images import generate_boot_images
 
 # Configuration Constants
 UF2_DIRECTORY = Path(__file__).resolve().parent.parent.parent / "ULP"
@@ -477,6 +480,11 @@ def main():
         action="store_true",
         help="Compile Python files to bytecode (.mpy) before upload",
     )
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Generate boot images with version overlay before upload",
+    )
 
     args = parser.parse_args()
 
@@ -495,6 +503,16 @@ def main():
         sys.exit(1)
 
     success = True
+
+    # Handle boot image generation
+    if args.generate:
+        print("=" * 50)
+        print("GENERATING BOOT IMAGES")
+        print("=" * 50)
+        if not generate_boot_images():
+            print("Boot image generation failed!")
+            sys.exit(1)
+        print()
 
     # Handle firmware flashing modes
     if args.wipe or args.first:

@@ -1,0 +1,32 @@
+{
+  "sam_version": "0.2.8",
+  "hw_version": "0.2.8",
+  "font_path": "/Users/chengmingzhang/CodingProjects/Software/Distiller-SAM-Firmware/Asset/TinyUnicode.ttf",
+  "base_images": {
+    "loading1": "Loading-A-2-1-inch.png",
+    "loading2": "Loading-B-2-1-inch.png"
+  },
+  "text_overlays": [
+    {
+      "text": "SAM:v{sam_version}",
+      "x": 42,
+      "y": 15,
+      "font_size": 16,
+      "color": "white",
+      "bg_color": "black"
+    },
+    {
+      "text": "HW:v{hw_version}",
+      "x": 42,
+      "y": 65,
+      "font_size": 16,
+      "color": "white",
+      "bg_color": "black"
+    }
+  ],
+  "display": {
+    "width": 128,
+    "height": 250,
+    "rotation_180": false
+  }
+}
