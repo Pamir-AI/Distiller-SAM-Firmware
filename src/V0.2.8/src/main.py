@@ -66,6 +66,16 @@ DEBUG_COLORS = {
     "PACKET_INVALID": (255, 128, 0),  # Orange - Invalid packet
 }
 
+# Error codes for display_error_screen
+ERROR_UART_EXCEPTION = 0x01
+ERROR_UART_HEARTBEAT_TIMEOUT = 0x02
+ERROR_EINK_FILE_NOT_FOUND = 0x03
+ERROR_EINK_TASK_FAILED = 0x04
+ERROR_MAIN_LOOP = 0x05
+
+# Flag to prevent re-entry into error display
+_error_display_in_progress = False
+
 
 def set_debug_color(color_name):
     """Set debug RGB color with error handling"""
@@ -78,6 +88,86 @@ def set_debug_color(color_name):
         debug.log_error(
             debug.CAT_SYSTEM, f"Failed to set debug color {color_name}: {e}"
         )
+
+
+def display_error_screen(error_code, message=""):
+    """
+    Display error on e-ink screen and release control to SoM.
+
+    Args:
+        error_code: Error code (0x01-0xFF)
+        message: Optional error message (max ~20 chars)
+    """
+    global _error_display_in_progress
+
+    # Prevent re-entry
+    if _error_display_in_progress:
+        return
+    _error_display_in_progress = True
+
+    try:
+        debug.log_info(debug.CAT_DISPLAY, f"Displaying error screen: 0x{error_code:02X} {message}")
+
+        # Import modules only when needed (save memory)
+        from eink_driver_sam import einkDSP_SAM
+        from text_overlay import TextOverlay
+
+        # Take control of e-ink
+        einkStatus.high()  # Power on
+        einkMux.high()     # SAM control
+
+        # Small delay for hardware to stabilize
+        utime.sleep_ms(50)
+
+        # Initialize e-ink
+        eink = einkDSP_SAM()
+        if not eink.init:
+            eink.re_init()
+        eink.epd_init_fast()
+
+        # Load error base image
+        try:
+            with open("./error.bin", "rb") as f:
+                buffer = bytearray(f.read())
+        except OSError:
+            debug.log_error(debug.CAT_DISPLAY, "error.bin not found, using blank screen")
+            buffer = bytearray([0xFF] * 4000)  # White screen
+
+        # Overlay error text
+        overlay = TextOverlay()
+
+        # Draw error code
+        error_text = "ERR:0x{:02X}".format(error_code)
+        overlay.draw_text_box(buffer, error_text, x=20, y=100,
+                              color=1, bg_color=0, padding=2, rotation=90)
+
+        # Draw message if provided
+        if message:
+            # Truncate message to fit
+            msg = message[:18]
+            overlay.draw_text_box(buffer, msg, x=20, y=100,
+                                  color=1, bg_color=0, padding=1, rotation=90)
+
+        # Display on e-ink
+        eink.EPD_Display(buffer)
+
+        debug.log_info(debug.CAT_DISPLAY, "Error screen displayed")
+
+        # Release control to SoM
+        eink.de_init()
+        einkMux.low()  # Route to SoM
+
+        debug.log_info(debug.CAT_DISPLAY, "E-ink control released to SoM")
+
+    except Exception as e:
+        debug.log_error(debug.CAT_DISPLAY, f"Error display failed: {e}")
+        # Last resort: just release control
+        try:
+            einkMux.low()
+        except:
+            pass
+    finally:
+        _error_display_in_progress = False
 
 
 def switch_usb(usb_type):
@@ -96,7 +186,10 @@ set_debug_color("INIT")
 debug.log_info(debug.CAT_SYSTEM, "=== RP2040 SAM Firmware v0.2.3 Starting ===")
 
 # USB switch setup
-switch_usb("SOM_USB")
+if not PRODUCTION:
+    switch_usb("SAM_USB")
+else:
+    switch_usb("SOM_USB")
 
 # Initialize protocol handler
 protocol = PamirUartProtocols()
@@ -565,6 +658,7 @@ def uart_communication_task():
         except Exception as e:
             debug.log_error(debug.CAT_UART, f"UART task error: {e}")
             set_debug_color("ERROR")
+            display_error_screen(ERROR_UART_EXCEPTION)
             utime.sleep_ms(10)
 
 
@@ -644,6 +738,7 @@ def eink_display_task():
         except OSError:
             set_debug_color("ERROR")
             debug.log_error(debug.CAT_DISPLAY, "Animation files not found")
+            display_error_screen(ERROR_EINK_FILE_NOT_FOUND)
 
         # Release eink control when Pi has booted or timeout reached
         debug.log_info(debug.CAT_DISPLAY, "Releasing eink control")
@@ -654,6 +749,7 @@ def eink_display_task():
     except Exception as e:
         set_debug_color("ERROR")
         debug.log_error(debug.CAT_DISPLAY, f"E-ink task failed: {e}")
+        display_error_screen(ERROR_EINK_TASK_FAILED)
         # Ensure eink is released even on error
         try:
             eink.de_init()
@@ -672,6 +768,7 @@ set_debug_color("MAIN_LOOP")
 # Main application loop
 last_heartbeat = utime.ticks_ms()
 HEARTBEAT_INTERVAL = 10000  # 10 seconds - reduced for better responsiveness
+uart_error_displayed = False  # Track if UART error has been shown
 
 while True:
     try:
@@ -688,6 +785,11 @@ while True:
                     uart_health["status"], uart_health["issues"]
                 )
                 debug.log_error(debug.CAT_SYSTEM, health_msg)
+                if not uart_error_displayed:
+                    display_error_screen(ERROR_UART_HEARTBEAT_TIMEOUT)
+                    uart_error_displayed = True
+            else:
+                uart_error_displayed = False  # Reset when healthy again
 
             # Send heartbeat debug code to kernel
             debug.send_debug_code(uart0, 0, 0x01, 0)  # System category, heartbeat code
@@ -701,4 +803,5 @@ while True:
     except Exception as e:
         debug.log_error(debug.CAT_SYSTEM, f"Main loop error: {e}")
         set_debug_color("ERROR")
+        display_error_screen(ERROR_MAIN_LOOP)
         utime.sleep_ms(1000)  # Longer delay on error

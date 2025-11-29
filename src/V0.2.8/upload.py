@@ -25,15 +25,17 @@ UART_PORT_PATTERN = "/dev/tty.usb*"
 PYTHON_FILES = [
     "bin/loading1.bin",
     "bin/loading2.bin",
-    "eink_driver_sam.py",
-    "pamir_uart_protocols.py",
-    "neopixel_controller.py",
-    "power_manager.py",
-    "battery.py",
-    "debug_handler.py",
-    "uart_handler.py",
-    "threaded_task_manager.py",
-    "main.py",
+    "bin/error.bin",
+    "src/eink_driver_sam.py",
+    "src/pamir_uart_protocols.py",
+    "src/neopixel_controller.py",
+    "src/power_manager.py",
+    "src/battery.py",
+    "src/debug_handler.py",
+    "src/uart_handler.py",
+    "src/threaded_task_manager.py",
+    "src/text_overlay.py",
+    "src/main.py",
 ]
 
 # UF2 Files (located in UF2_DIRECTORY)
@@ -236,46 +238,40 @@ def flash_uf2_file_applescript(uf2_filename, description):
 
 
 def flash_uf2_file(uf2_filename, description):
-    """Flash a UF2 file to the RP2040 - tries AppleScript first, then fallback methods"""
+    """Flash a UF2 file to the RP2040 using direct cp command"""
     uf2_path = os.path.join(UF2_DIRECTORY, uf2_filename)
 
     if not os.path.exists(uf2_path):
         print(f"Error: {uf2_filename} not found in {UF2_DIRECTORY}")
         return False
 
-    # Try AppleScript method first (most reliable for macOS)
-    if flash_uf2_file_applescript(uf2_filename, description):
-        return True
-
-    print(f"AppleScript failed, trying manual copy methods...")
     print(f"Copying {description}...")
 
     try:
-        # Fallback: Try multiple copy methods
         dest_path = os.path.join(VOLUME_PATH, uf2_filename)
 
-        # Method 1: Try standard copy
-        try:
-            shutil.copy2(uf2_path, dest_path)
-            os.chmod(dest_path, 0o644)
-        except (PermissionError, OSError):
-            # Method 2: Try using subprocess cp command
-            print("Trying cp command...")
-            result = subprocess.run(
-                ["cp", uf2_path, dest_path], capture_output=True, text=True
-            )
-            if result.returncode != 0:
-                raise PermissionError(f"Copy command failed: {result.stderr}")
+        # Use cp command directly - it works even though it may report errors
+        # because the device reboots mid-copy (which is expected behavior)
+        result = subprocess.run(
+            ["cp", uf2_path, dest_path], capture_output=True, text=True
+        )
 
-        # Verify the file was copied
-        if os.path.exists(dest_path):
+        # Check for expected "success" conditions:
+        # 1. Return code 0 = normal success
+        # 2. "Device not configured" = device rebooted mid-copy (expected for UF2)
+        # 3. "No such file" on dest = device rebooted and volume disappeared (expected)
+        if result.returncode == 0:
             print(f"{description} copied successfully")
             return True
+        elif "Device not configured" in result.stderr or "No such file" in result.stderr:
+            # This is actually success - the device rebooted because the UF2 was flashed
+            print(f"{description} flashed successfully (device rebooted)")
+            return True
         else:
-            raise FileNotFoundError("File copy appeared to succeed but file not found")
+            raise OSError(f"Copy failed: {result.stderr}")
 
     except Exception as e:
-        print(f"All copy methods failed: {e}")
+        print(f"Copy failed: {e}")
         print("\nManual steps:")
         print(f"1. Open Finder and navigate to: {UF2_DIRECTORY}")
         print(f"2. Drag {uf2_filename} to RPI-RP2 volume")

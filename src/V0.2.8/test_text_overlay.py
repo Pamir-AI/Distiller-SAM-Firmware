@@ -80,13 +80,12 @@ def test_error_display():
     """Test error display helper."""
     print("Test 3: Error display helper")
 
-    base_bin = BIN_DIR / "loading1.bin"
+    base_bin = BIN_DIR / "error.bin"
     with open(base_bin, 'rb') as f:
         buffer = bytearray(f.read())
 
     # Use convenience function
-    draw_error(buffer, 0x1A, "UART Timeout", x=5, y=5)
-    draw_error(buffer, 0xFF, "", x=5, y=25)
+    draw_error(buffer, 0x1A, x=20, y=100)
 
     output_path = ASSET_DIR / "test_error.png"
     buffer_to_image(buffer, str(output_path))
