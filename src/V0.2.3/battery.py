@@ -1,9 +1,13 @@
 """Battery Management System for TI's BQ27441-G1A fuel gauge IC."""
 
+#7 21
+
 # pylint: disable=import-error,invalid-name
 import struct
 import time
 import machine
+
+verbose = False # [Set true when debugging]
 
 
 class BQ27441:
@@ -54,17 +58,32 @@ class BQ27441:
         self._wr(0x61, b"\x00")  # BlockDataControl = 0
         self._wr(0x3E, bytes([subclass_id]))  # DataClass
         self._wr(0x3F, bytes([offset // 32]))  # Block offset 0-7
+        time.sleep_ms(10) #This delay is needed for the BQ27441 to process the command
 
         # 2 read current 32-byte buffer
         buf = bytearray(self._rd(0x40, 32))
         # 3 modify
-        buf[offset % 32 : offset % 32 + len(payload)] = payload
+        start = offset % 32
+        buf[offset % 32: offset % 32 + len(payload)] = payload
         # 4 write back whole buffer (only touched bytes actually needed)
         self._wr(0x40, buf)
 
         # 5 checksum
         csum = (0xFF - (sum(buf) & 0xFF)) & 0xFF
         self._wr(0x60, bytes([csum]))
+
+    # # 6: **Read back the bytes that were written to verify success**
+    # readback = bytearray(self._rd(0x40 + start, len(payload)))
+    # if readback != bytearray(payload):
+    #     if verbose:
+    #         print("[EXT-WRITE][FAIL] subclass=0x{0:02X} offset=0x{1:02X} "
+    #               "wrote={2} read={3} 可能原因: 字节序错误 / 未进入CFGUPDATE / 校验和错误 / I2C失败"
+    #               .format(subclass_id, offset, payload.hex(), readback.hex()))
+    # else:
+    #     if verbose:
+    #         print("[EXT-WRITE][OK]   subclass=0x{0:02X} offset=0x{1:02X} data={2}"
+    #               .format(subclass_id, offset, readback.hex()))
+    # return bytes(readback)
 
     # ---------- public one-shot initialiser ----------
     def initialise(
@@ -87,10 +106,10 @@ class BQ27441:
         if CALIBRATION:
             # 1 Design Capacity & Terminate Voltage (State 0x52, block 0)
             self._extended_block_write(
-                0x52, 0x0A, struct.pack("<H", design_capacity_mAh)
+                0x52, 0x0A, struct.pack(">H", design_capacity_mAh)
             )
             self._extended_block_write(
-                0x52, 0x10, struct.pack("<H", terminate_voltage_mV)
+                0x52, 0x10, struct.pack(">H", terminate_voltage_mV)
             )
 
             # 2 clear OpConfig BIE (Registers 0x40, byte 0x40)
@@ -111,7 +130,7 @@ class BQ27441:
 
     def remain_capacity(self):
         """Get the remaining capacity in mAh."""
-        return self._rd_word(0x1C)
+        return self._rd_word(0x0C)
 
     def voltage_V(self):
         """Get the battery voltage in volts."""
@@ -125,6 +144,42 @@ class BQ27441:
         """Get the average current in milliamperes."""
         raw = self._rd_word(0x10)
         return raw - 0x10000 if raw & 0x8000 else raw
+
+    def i2c_get_Control(self):
+        """Get the control register value."""
+        return self._rd_word(0x00)
+    
+    def i2c_get_flags(self):
+        """Get the flags register value."""
+        return self._rd_word(0x06)
+    
+    def i2c_get_stateofcharge(self):
+        """Get the state of charge register value in %."""
+        return self._rd_word(0x1C)
+
+    def i2c_get_NominalAvailableCapacity(self):
+        """Get the nominal available capacity register value in mAh."""
+        return self._rd_word(0x08)
+
+    def i2c_get_FullAvailableCapacity(self):
+        """Get the full available capacity register value in mAh."""
+        return self._rd_word(0x0A)
+    
+    def i2c_get_FullChargeCapacity(self):
+        """Get the full charge capacity register value in mAh."""
+        return self._rd_word(0x0E)
+
+    def i2c_get_StandbyCurrent(self):
+        """Get the standby current register value in mA."""
+        return self._rd_word(0x12)
+    
+    def i2c_get_StateOfHealth(self):
+        """Get the state of health register value."""
+        return self._rd_word(0x20)
+    
+    def i2c_get_DesignCapacity(self):
+        """Get the design capacity register value in mAh."""
+        return self._rd_word(0x3c)
 
     # Add additional methods here for other registers you need to interface with
 
